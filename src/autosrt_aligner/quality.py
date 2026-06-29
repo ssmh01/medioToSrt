@@ -1,0 +1,116 @@
+"""Quality report generation for subtitle cues."""
+
+from __future__ import annotations
+
+import re
+from statistics import mean
+from typing import Any
+
+from .models import SubtitleCue, SubtitleProfile
+from .splitter import _is_high_risk_boundary
+from .text import unaligned_text_ratio
+
+
+def build_quality_report(
+    cues: list[SubtitleCue],
+    display_text: str,
+    audio_duration: float | None,
+    profile: SubtitleProfile,
+    language: str = "auto",
+) -> dict[str, Any]:
+    durations = [cue.duration for cue in cues]
+    cps_values = [_chars(cue.text) / max(cue.duration, 0.1) for cue in cues]
+    cue_lengths = [_chars(cue.text) for cue in cues]
+    gaps = [cur.start - prev.end for prev, cur in zip(cues, cues[1:])]
+
+    overlap_count = sum(1 for prev, cur in zip(cues, cues[1:]) if cur.start < prev.end)
+    too_short_count = sum(1 for cue in cues if cue.duration < profile.min_duration)
+    too_long_count = sum(1 for cue in cues if cue.duration > profile.max_duration)
+    empty_count = sum(1 for cue in cues if not cue.text.strip())
+    large_gap_count = sum(1 for gap in gaps if gap > 0.8)
+    weak_boundary_count = _weak_boundary_count(cues, display_text, language)
+    ratio = unaligned_text_ratio(cues, display_text)
+
+    warnings: list[str] = []
+    if overlap_count:
+        warnings.append("存在字幕时间轴重叠")
+    if too_short_count:
+        warnings.append("存在过短字幕")
+    if too_long_count:
+        warnings.append("存在过长字幕")
+    if ratio:
+        warnings.append("字幕文本与原文未完全连续一致")
+    if max(cps_values, default=0.0) > profile.max_chars_per_second:
+        warnings.append("存在阅读速度过快的字幕")
+    if max(cue_lengths, default=0) > profile.max_chars_total:
+        warnings.append("存在单条字幕过长")
+    if large_gap_count:
+        warnings.append("存在疑似异常长间隔")
+
+    score = 100
+    score -= overlap_count * 18
+    score -= too_short_count * 6
+    score -= too_long_count * 6
+    score -= empty_count * 12
+    score -= int(ratio * 60)
+    score -= sum(1 for value in cps_values if value > profile.max_chars_per_second) * 4
+    score -= sum(1 for length in cue_lengths if length > profile.max_chars_total) * 3
+    score -= large_gap_count * 4
+    score -= weak_boundary_count * 2
+    score = max(0, min(100, score))
+
+    return {
+        "audio_duration": audio_duration,
+        "subtitle_count": len(cues),
+        "avg_subtitle_duration": _rounded(mean(durations) if durations else 0.0),
+        "min_subtitle_duration": _rounded(min(durations) if durations else 0.0),
+        "max_subtitle_duration": _rounded(max(durations) if durations else 0.0),
+        "avg_chars_per_second": _rounded(mean(cps_values) if cps_values else 0.0),
+        "max_chars_per_second": _rounded(max(cps_values) if cps_values else 0.0),
+        "p95_chars_per_second": _rounded(_percentile(cps_values, 0.95)),
+        "max_chars_per_cue": max(cue_lengths, default=0),
+        "large_gap_count": large_gap_count,
+        "max_gap_seconds": _rounded(max(gaps, default=0.0)),
+        "weak_boundary_count": weak_boundary_count,
+        "overlap_count": overlap_count,
+        "too_short_count": too_short_count,
+        "too_long_count": too_long_count,
+        "empty_subtitle_count": empty_count,
+        "unaligned_text_ratio": _rounded(ratio),
+        "suspicious_gap_count": large_gap_count,
+        "quality_score": score,
+        "warnings": warnings,
+    }
+
+
+def _chars(text: str) -> int:
+    return len("".join(text.split()))
+
+
+def _rounded(value: float) -> float:
+    return round(float(value), 3)
+
+
+def _percentile(values: list[float], percentile: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    index = round((len(ordered) - 1) * percentile)
+    return ordered[index]
+
+
+def _has_natural_boundary(text: str) -> bool:
+    compact = text.strip()
+    if not compact:
+        return True
+    return compact[-1] in "。！？!?…、，,;；:：」』”’）)]】"
+
+
+def _weak_boundary_count(cues: list[SubtitleCue], display_text: str, language: str) -> int:
+    if _uses_japanese_boundary_rules(display_text, language):
+        return sum(1 for cue in cues[:-1] if _is_high_risk_boundary(display_text, cue.end_char, "ja"))
+    return sum(1 for cue in cues if not _has_natural_boundary(cue.text))
+
+
+def _uses_japanese_boundary_rules(display_text: str, language: str) -> bool:
+    return language == "ja" or (language == "auto" and bool(re.search(r"[\u3040-\u30ff]", display_text)))

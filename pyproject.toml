@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autosrt-aligner"
+version = "0.1.0"
+description = "Forced-alignment SRT/VTT generator for AI narration audio and source scripts."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "gradio>=5.0,<6",
+  "stable-ts>=2.19.0",
+  "imageio-ffmpeg>=0.5.1",
+]
+
+[project.scripts]
+autosrt-aligner = "autosrt_aligner.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
