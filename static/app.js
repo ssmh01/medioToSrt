@@ -71,7 +71,8 @@ function bindEvents() {
 async function loadOptions() {
     const response = await fetch("/api/options");
     const data = await response.json();
-    nodes.languageSelect.innerHTML = '<option value="" selected disabled>请选择语言</option>' + data.languages
+    const languages = data.languages.filter((value) => value !== "auto");
+    nodes.languageSelect.innerHTML = '<option value="" selected disabled>请选择语言</option>' + languages
         .map((value) => `<option value="${escapeAttr(value)}">${languageLabel(value)}</option>`)
         .join("");
     nodes.profileSelect.innerHTML = data.profiles
