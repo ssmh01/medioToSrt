@@ -26,14 +26,21 @@
         <main class="workspace">
             <aside class="panel input-panel">
                 <form id="jobForm">
+                    <button class="primary-action" id="submitButton" type="submit">
+                        <span class="play-icon">▶</span>
+                        开始生成
+                    </button>
+
                     <div class="field-group">
                         <label class="section-title" for="audioInput">上传音频</label>
                         <div class="upload-card" id="audioCard">
                             <input id="audioInput" name="audio_file" type="file" accept="audio/*">
                             <div class="upload-empty" id="audioEmpty">
                                 <div class="upload-icon music">♪</div>
-                                <strong>选择或拖入音频文件</strong>
-                                <span>支持常见音频格式</span>
+                                <div class="upload-copy">
+                                    <strong>选择或拖入音频文件</strong>
+                                    <span>支持常见音频格式</span>
+                                </div>
                             </div>
                             <div class="upload-chosen hidden" id="audioChosen">
                                 <div class="file-icon music">♪</div>
@@ -52,8 +59,10 @@
                             <input id="scriptFileInput" name="script_file" type="file" accept=".txt,text/plain">
                             <div class="upload-empty" id="scriptEmpty">
                                 <div class="upload-icon doc">{}</div>
-                                <strong>选择或拖入 TXT 文件</strong>
-                                <span>也可以直接粘贴原文案</span>
+                                <div class="upload-copy">
+                                    <strong>选择或拖入 TXT 文件</strong>
+                                    <span>也可以直接粘贴原文案</span>
+                                </div>
                             </div>
                             <div class="upload-chosen hidden" id="scriptChosen">
                                 <div class="file-icon doc">{}</div>
@@ -121,10 +130,6 @@
                         </div>
                     </details>
 
-                    <button class="primary-action" id="submitButton" type="submit">
-                        <span class="play-icon">▶</span>
-                        开始生成
-                    </button>
                 </form>
             </aside>
 
@@ -195,7 +200,7 @@
             </section>
 
             <aside class="panel output-panel">
-                <section class="side-card">
+                <section class="side-card log-card">
                     <div class="panel-header">
                         <h2>生成日志</h2>
                         <button type="button" id="clearLogs" class="mini-button">清空</button>

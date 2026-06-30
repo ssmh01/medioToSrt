@@ -115,10 +115,19 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(payload["status"], "succeeded")
         self.assertEqual(payload["quality_report"]["subtitle_count"], 1)
         self.assertEqual(payload["preview_rows"][0][3], "测试字幕")
-        self.assertEqual({item["kind"] for item in payload["downloads"]}, {"srt", "vtt", "quality_report", "alignment"})
+        self.assertEqual({item["kind"] for item in payload["downloads"]}, {"srt", "vtt"})
+        self.assertIn(
+            {"kind": "srt", "label": "audio.srt", "url": f"/api/jobs/{job_id}/files/srt"},
+            payload["downloads"],
+        )
+        self.assertIn(
+            {"kind": "vtt", "label": "audio.vtt", "url": f"/api/jobs/{job_id}/files/vtt"},
+            payload["downloads"],
+        )
 
         download = self.client.get(f"/api/jobs/{job_id}/files/srt")
         self.assertEqual(download.status_code, 200)
+        self.assertIn("audio.srt", download.headers["content-disposition"])
         self.assertIn("测试字幕", download.text)
 
     def test_create_job_requires_audio(self):

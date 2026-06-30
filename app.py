@@ -34,6 +34,7 @@ FILE_LABELS = {
 @dataclass
 class JobRecord:
     job_id: str
+    audio_filename: str = "audio"
     status: str = "queued"
     stage: str = "queued"
     logs: list[str] = field(default_factory=list)
@@ -113,7 +114,8 @@ def create_job(
     upload_dir = output_dir / "uploads"
     upload_dir.mkdir(parents=True, exist_ok=True)
 
-    audio_path = upload_dir / _safe_filename(audio_file.filename, "audio")
+    audio_filename = _safe_filename(audio_file.filename, "audio")
+    audio_path = upload_dir / audio_filename
     _save_upload(audio_file, audio_path)
     if script_file is not None and script_file.filename:
         _save_upload(script_file, upload_dir / _safe_filename(script_file.filename, "script.txt"))
@@ -121,6 +123,7 @@ def create_job(
 
     record = JobRecord(
         job_id=job_id,
+        audio_filename=audio_filename,
         status="queued",
         stage="queued",
         logs=["已接收上传文件", "任务已进入队列"],
@@ -164,7 +167,7 @@ def download_file(job_id: str, kind: str) -> FileResponse:
     if path is None or not path.exists():
         raise HTTPException(status_code=404, detail="文件尚未生成")
     media_type = "application/json" if kind in {"quality_report", "alignment"} else "text/plain"
-    return FileResponse(path, media_type=media_type, filename=FILE_LABELS[kind])
+    return FileResponse(path, media_type=media_type, filename=_download_filename(record, kind))
 
 
 def _run_job(
@@ -295,12 +298,19 @@ def _download_payload(record: JobRecord) -> list[dict[str, str]]:
     return [
         {
             "kind": kind,
-            "label": FILE_LABELS[kind],
+            "label": _download_filename(record, kind),
             "url": f"/api/jobs/{record.job_id}/files/{kind}",
         }
-        for kind in ("srt", "vtt", "quality_report", "alignment")
+        for kind in ("srt", "vtt")
         if kind in record.files and record.files[kind].exists()
     ]
+
+
+def _download_filename(record: JobRecord, kind: str) -> str:
+    if kind in {"srt", "vtt"}:
+        stem = Path(record.audio_filename).stem.strip() or "audio"
+        return f"{stem}.{kind}"
+    return FILE_LABELS[kind]
 
 
 if __name__ == "__main__":
