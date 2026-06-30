@@ -22,7 +22,7 @@ from autosrt_aligner.profiles import PROFILE_LABELS, SUPPORTED_LANGUAGES
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
-LANGUAGES = ["auto", "zh", "zh-TW", "ja", "en"]
+LANGUAGES = ["zh", "zh-TW", "ja", "en"]
 FILE_LABELS = {
     "srt": "字幕文件.srt",
     "vtt": "字幕文件.vtt",
@@ -71,7 +71,6 @@ def api_options() -> dict[str, Any]:
             for key, label in PROFILE_LABELS.items()
         ],
         "defaults": {
-            "language": "auto",
             "subtitle_profile": "youtube_long",
             "min_duration": 1.2,
             "max_duration": 6.5,
@@ -87,7 +86,7 @@ def create_job(
     audio_file: UploadFile | None = File(default=None),
     script_file: UploadFile | None = File(default=None),
     script_text: str = Form(default=""),
-    language: str = Form(default="auto"),
+    language: str = Form(default=""),
     subtitle_profile: str = Form(default="youtube_long"),
     min_duration: float = Form(default=1.2),
     max_duration: float = Form(default=6.5),
@@ -97,8 +96,6 @@ def create_job(
 ) -> dict[str, str]:
     if audio_file is None or not audio_file.filename:
         raise HTTPException(status_code=400, detail="请先上传音频文件")
-    if language not in SUPPORTED_LANGUAGES:
-        raise HTTPException(status_code=400, detail=f"不支持的语言参数: {language}")
     if subtitle_profile not in PROFILE_LABELS:
         raise HTTPException(status_code=400, detail=f"不支持的字幕风格: {subtitle_profile}")
     if min_duration <= 0:
@@ -109,6 +106,8 @@ def create_job(
         raise HTTPException(status_code=400, detail="字幕切分参考字符数必须大于 0")
 
     text = _read_script_text(script_file, script_text)
+    if language not in SUPPORTED_LANGUAGES:
+        raise HTTPException(status_code=400, detail=f"不支持的语言参数: {language}")
     job_id = str(uuid.uuid4())
     output_dir = Path(tempfile.mkdtemp(prefix=f"autosrt_web_{job_id}_"))
     upload_dir = output_dir / "uploads"

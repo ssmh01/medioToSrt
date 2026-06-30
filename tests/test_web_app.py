@@ -17,7 +17,7 @@ from autosrt_aligner.models import JobResult, SubtitleCue
 def fake_run_alignment_job(
     audio_path,
     script_text,
-    language="auto",
+    language="zh",
     subtitle_profile="youtube_long",
     output_dir=None,
     min_duration=None,
@@ -91,8 +91,26 @@ class WebAppTests(unittest.TestCase):
         response = self.client.get("/api/options")
         self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertIn("auto", payload["languages"])
+        self.assertNotIn("auto", payload["languages"])
+        self.assertNotIn("language", payload["defaults"])
         self.assertEqual(payload["defaults"]["subtitle_profile"], "youtube_long")
+
+    def test_create_job_requires_language(self):
+        response = self.client.post(
+            "/api/jobs",
+            data={
+                "script_text": "测试字幕",
+                "subtitle_profile": "youtube_long",
+                "min_duration": "1.0",
+                "max_duration": "4.0",
+                "max_chars_per_line": "12",
+                "generate_vtt": "true",
+                "preserve_punctuation": "true",
+            },
+            files={"audio_file": ("audio.mp3", b"fake audio", "audio/mpeg")},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("不支持的语言参数", response.json()["detail"])
 
     def test_create_job_status_and_download(self):
         response = self.client.post(

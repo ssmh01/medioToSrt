@@ -170,7 +170,7 @@ def wrap_subtitle_text(text: str, _language: str, _max_chars_per_line: int) -> s
     return render_display_segment(text)
 
 
-def _repair_timing(cues: list[SubtitleCue], profile: SubtitleProfile, language: str = "auto") -> list[SubtitleCue]:
+def _repair_timing(cues: list[SubtitleCue], profile: SubtitleProfile, language: str = "zh") -> list[SubtitleCue]:
     repaired = list(cues)
     for idx, cue in enumerate(repaired):
         start = max(0.0, cue.start)
@@ -322,7 +322,7 @@ def _move_boundary(
     )
 
 
-def _smooth_timing(cues: list[SubtitleCue], profile: SubtitleProfile, language: str = "auto") -> list[SubtitleCue]:
+def _smooth_timing(cues: list[SubtitleCue], profile: SubtitleProfile, language: str = "zh") -> list[SubtitleCue]:
     if not cues:
         return cues
 

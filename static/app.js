@@ -71,13 +71,13 @@ function bindEvents() {
 async function loadOptions() {
     const response = await fetch("/api/options");
     const data = await response.json();
-    nodes.languageSelect.innerHTML = data.languages
+    nodes.languageSelect.innerHTML = '<option value="" selected disabled>请选择语言</option>' + data.languages
         .map((value) => `<option value="${escapeAttr(value)}">${languageLabel(value)}</option>`)
         .join("");
     nodes.profileSelect.innerHTML = data.profiles
         .map((profile) => `<option value="${escapeAttr(profile.key)}">${escapeHtml(profile.label)}</option>`)
         .join("");
-    nodes.languageSelect.value = data.defaults.language;
+    nodes.languageSelect.value = "";
     nodes.profileSelect.value = data.defaults.subtitle_profile;
     nodes.minDuration.value = data.defaults.min_duration;
     nodes.maxDuration.value = data.defaults.max_duration;
@@ -153,6 +153,11 @@ async function submitJob(event) {
     }
     if (!nodes.scriptFileInput.files.length && !nodes.scriptText.value.trim()) {
         showError("请上传 TXT 文案或粘贴原始文案");
+        return;
+    }
+    if (!nodes.languageSelect.value) {
+        showError("请先选择语言");
+        nodes.languageSelect.focus();
         return;
     }
 
@@ -390,7 +395,6 @@ function buildWaveform() {
 
 function languageLabel(value) {
     return {
-        auto: "自动识别",
         zh: "中文（简体）",
         "zh-TW": "中文（繁体）",
         ja: "日语",

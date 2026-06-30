@@ -62,7 +62,7 @@ PYTHONPATH=src python -m autosrt_aligner.cli \
 - FastAPI + 原生 HTML/CSS/JS 网页 UI。
 - 异步任务提交、状态轮询、日志、质量报告和下载列表。
 - 音频上传、txt 上传或文本粘贴。
-- `auto` / `zh` / `zh-TW` / `ja` / `en`。
+- `zh` / `zh-TW` / `ja` / `en`，必须手动选择语言。
 - stable-ts forced alignment 引擎封装。
 - 规则候选 + 贪心 + validator 的字幕切分。
 - SRT/VTT 导出、字幕预览、质量报告、alignment JSON。

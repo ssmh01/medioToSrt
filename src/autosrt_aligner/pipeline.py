@@ -21,7 +21,7 @@ from .text import clean_script_text, map_tokens_to_display
 def run_alignment_job(
     audio_path: str | Path,
     script_text: str,
-    language: str = "auto",
+    language: str = "zh",
     subtitle_profile: str = "youtube_long",
     output_dir: str | Path | None = None,
     min_duration: float | None = None,

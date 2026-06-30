@@ -1,8 +1,6 @@
 """Quality report generation for subtitle cues."""
 
 from __future__ import annotations
-
-import re
 from statistics import mean
 from typing import Any
 
@@ -16,7 +14,7 @@ def build_quality_report(
     display_text: str,
     audio_duration: float | None,
     profile: SubtitleProfile,
-    language: str = "auto",
+    language: str = "zh",
 ) -> dict[str, Any]:
     durations = [cue.duration for cue in cues]
     cps_values = [_chars(cue.text) / max(cue.duration, 0.1) for cue in cues]
@@ -113,4 +111,4 @@ def _weak_boundary_count(cues: list[SubtitleCue], display_text: str, language: s
 
 
 def _uses_japanese_boundary_rules(display_text: str, language: str) -> bool:
-    return language == "ja" or (language == "auto" and bool(re.search(r"[\u3040-\u30ff]", display_text)))
+    return language == "ja"

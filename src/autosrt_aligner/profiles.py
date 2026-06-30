@@ -13,13 +13,13 @@ PROFILE_LABELS = {
     "slow_elder": "老年频道慢节奏朗读字幕",
 }
 
-SUPPORTED_LANGUAGES = {"auto", "zh", "zh-TW", "ja", "en"}
+SUPPORTED_LANGUAGES = {"zh", "zh-TW", "ja", "en"}
 
 
 def language_group(language: str) -> str:
     if language not in SUPPORTED_LANGUAGES:
         raise InputError(f"不支持的语言参数: {language}")
-    if language in {"zh", "zh-TW", "auto"}:
+    if language in {"zh", "zh-TW"}:
         return "cjk"
     if language == "ja":
         return "ja"

@@ -7,7 +7,6 @@ downloading models or installing heavy audio packages.
 from __future__ import annotations
 
 from pathlib import Path
-import re
 from typing import Any
 
 from autosrt_aligner.audio import ensure_ffmpeg_on_path
@@ -39,9 +38,7 @@ class StableTsEngine:
         logs.append(f"加载 stable-ts 模型: {self.model_name}")
         try:
             model = stable_whisper.load_model(self.model_name)
-            language_arg = _resolve_stable_ts_language(language, cleaned_text.display_text)
-            if language == "auto":
-                logs.append(f"自动识别语言: {language_arg}")
+            language_arg = "zh" if language == "zh-TW" else language
             logs.append(f"开始 stable-ts forced alignment，language={language_arg}")
             result = model.align(str(audio_path), cleaned_text.align_text, language=language_arg)
         except Exception as exc:  # pragma: no cover - model/runtime dependent
@@ -55,25 +52,6 @@ class StableTsEngine:
         raw["requested_language"] = language
         raw["stable_ts_language"] = language_arg
         return AlignmentResult(tokens=tokens, raw=raw, audio_duration=raw.get("duration"), language=language)
-
-
-def _resolve_stable_ts_language(language: str, display_text: str) -> str:
-    if language == "zh-TW":
-        return "zh"
-    if language != "auto":
-        return language
-
-    japanese_chars = len(re.findall(r"[\u3040-\u30ff]", display_text))
-    cjk_chars = len(re.findall(r"[\u4e00-\u9fff]", display_text))
-    latin_chars = len(re.findall(r"[A-Za-z]", display_text))
-
-    if japanese_chars:
-        return "ja"
-    if cjk_chars:
-        return "zh"
-    if latin_chars:
-        return "en"
-    return "zh"
 
 
 def _extract_tokens(result: Any) -> list[AlignmentToken]:

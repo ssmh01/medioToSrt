@@ -47,7 +47,7 @@ class AlignmentResult:
     tokens: list[AlignmentToken]
     raw: dict[str, Any] = field(default_factory=dict)
     audio_duration: float | None = None
-    language: str = "auto"
+    language: str = "zh"
 
 
 @dataclass
@@ -99,4 +99,3 @@ def seconds_to_preview(seconds: float) -> str:
     m = (total_seconds // 60) % 60
     h = total_seconds // 3600
     return f"{h:02d}:{m:02d}:{s:02d}.{ms:03d}"
-
