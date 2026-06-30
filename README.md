@@ -1,6 +1,6 @@
 # 全自动 AI 语音原文案对齐 SRT 工具
 
-这是一个本地运行的 Gradio MVP。它把“已经生成好的 AI 语音”和“原始文案”做 forced alignment，导出适合 YouTube 使用的 `output.srt`、可选 `output.vtt`、`alignment.json` 和 `quality_report.json`。
+这是一个本地运行的 FastAPI Web 工具。它把“已经生成好的 AI 语音”和“原始文案”做 forced alignment，导出适合 YouTube 使用的 `output.srt`、可选 `output.vtt`、`alignment.json` 和 `quality_report.json`。
 
 核心约束：
 
@@ -12,7 +12,7 @@
 
 - Python 3.10+，推荐使用 Codex 自带 Python 3.12。
 - 推荐系统安装 `ffmpeg` 和 `ffprobe`；如果没有系统 ffmpeg，项目会使用 `imageio-ffmpeg` 提供的本地 ffmpeg fallback。
-- 依赖：Gradio、stable-ts、imageio-ffmpeg。
+- 依赖：FastAPI、uvicorn、python-multipart、stable-ts、imageio-ffmpeg。
 
 macOS 如果已有 Homebrew，也可以安装系统 ffmpeg：
 
@@ -59,7 +59,8 @@ PYTHONPATH=src python -m autosrt_aligner.cli \
 
 已包含：
 
-- 单文件 Gradio 网页 UI。
+- FastAPI + 原生 HTML/CSS/JS 网页 UI。
+- 异步任务提交、状态轮询、日志、质量报告和下载列表。
 - 音频上传、txt 上传或文本粘贴。
 - `auto` / `zh` / `zh-TW` / `ja` / `en`。
 - stable-ts forced alignment 引擎封装。
