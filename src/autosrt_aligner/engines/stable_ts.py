@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from autosrt_aligner.audio import ensure_ffmpeg_on_path
+from autosrt_aligner.audio import clip_audio_segment, ensure_ffmpeg_on_path
 from autosrt_aligner.errors import AlignmentError, DependencyError
 from autosrt_aligner.models import AlignmentResult, AlignmentToken, CleanedText
 
@@ -52,6 +52,29 @@ class StableTsEngine:
         raw["requested_language"] = language
         raw["stable_ts_language"] = language_arg
         return AlignmentResult(tokens=tokens, raw=raw, audio_duration=raw.get("duration"), language=language)
+
+    def realign_fragment(
+        self,
+        audio_path: Path,
+        cleaned_text: CleanedText,
+        language: str,
+        audio_start: float,
+        audio_end: float,
+        work_dir: Path,
+        logs: list[str],
+        attempt_id: str,
+    ) -> AlignmentResult:
+        clip_path = clip_audio_segment(
+            audio_path,
+            work_dir / f"timeline_realign_{attempt_id}.wav",
+            audio_start,
+            audio_end,
+        )
+        logs.append(
+            "局部重对齐: "
+            f"{audio_start:.3f}s-{audio_end:.3f}s, 文本字符数 {len(cleaned_text.display_text)}"
+        )
+        return self.align(clip_path, cleaned_text, language, logs)
 
 
 def _extract_tokens(result: Any) -> list[AlignmentToken]:

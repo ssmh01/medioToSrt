@@ -217,7 +217,7 @@ async function pollJob(jobId) {
     renderStage(payload.stage || payload.status);
     renderPreview(payload.preview_rows || []);
     renderQuality(payload.quality_report);
-    renderDownloads(payload.downloads || []);
+    renderDownloads(payload.downloads || [], payload.quality_report);
 
     if (payload.quality_report?.audio_duration) {
         nodes.audioDuration.textContent = formatDuration(payload.quality_report.audio_duration);
@@ -311,6 +311,9 @@ function renderQuality(report) {
         ["语音覆盖率", "--"],
         ["平均每条时长", "--"],
         ["最长时长", "--"],
+        ["时间轴状态", "--"],
+        ["时间轴置信度", "--"],
+        ["低置信段", "0"],
     ];
     nodes.qualityGrid.innerHTML = values
         .map(([label, value]) => `<div><span>${label}</span><strong>${escapeHtml(value)}</strong></div>`)
@@ -345,22 +348,35 @@ function qualityValues(report) {
         ["语音覆盖率", coverage],
         ["平均每条时长", `${report.avg_subtitle_duration || 0} 秒`],
         ["最长时长", `${report.max_subtitle_duration || 0} 秒`],
+        ["时间轴状态", timelineStatusLabel(report.timeline_status || "ok")],
+        ["时间轴置信度", `${report.timeline_confidence_score ?? "--"}`],
+        ["低置信段", String((report.low_confidence_ranges || []).length)],
     ];
 }
 
-function renderDownloads(downloads) {
+function timelineStatusLabel(status) {
+    if (status === "needs_review") return "需检查";
+    if (status === "repaired") return "已修复";
+    return "正常";
+}
+
+function renderDownloads(downloads, qualityReport = null) {
     if (!downloads.length) {
         nodes.downloadList.innerHTML = '<div class="empty-download">生成完成后显示下载文件</div>';
         return;
     }
+    const needsTimelineReview = qualityReport?.timeline_status === "needs_review";
     nodes.downloadList.innerHTML = downloads.map((item) => {
         const extension = item.label.split(".").pop().toUpperCase();
+        const meta = needsTimelineReview && item.kind === "srt"
+            ? "需检查时间轴"
+            : "点击右侧按钮下载";
         return `
-            <div class="download-item">
+            <div class="download-item ${needsTimelineReview && item.kind === "srt" ? "needs-review" : ""}">
                 <div class="download-icon ${escapeAttr(item.kind)}">${escapeHtml(extension)}</div>
                 <div>
                     <div class="download-name">${escapeHtml(item.label)}</div>
-                    <div class="download-meta">点击右侧按钮下载</div>
+                    <div class="download-meta">${escapeHtml(meta)}</div>
                 </div>
                 <a class="download-link" href="${escapeAttr(item.url)}" download title="下载">⇩</a>
             </div>

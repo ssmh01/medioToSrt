@@ -29,6 +29,46 @@ class FakeEngine:
         return AlignmentResult(tokens=tokens, raw={"engine": "fake"}, audio_duration=visible_index * 0.24)
 
 
+class BrokenTimelineEngine:
+    requires_audio_preprocessing = False
+
+    def __init__(self, repair_succeeds: bool = True) -> None:
+        self.repair_succeeds = repair_succeeds
+        self.realign_calls = 0
+
+    def align(self, audio_path, cleaned_text, language, logs):
+        break_at = cleaned_text.display_text.index("心の中")
+        tokens = []
+        visible_index = 0
+        for idx, ch in enumerate(cleaned_text.display_text):
+            if ch.isspace():
+                continue
+            if idx < break_at:
+                start = visible_index * 0.2
+                confidence = 0.9
+            else:
+                start = 44.0 + visible_index * 1.6
+                confidence = 0.01
+            tokens.append(AlignmentToken(ch, start, start + 0.12, idx, idx + 1, confidence=confidence))
+            visible_index += 1
+        return AlignmentResult(tokens=tokens, raw={"engine": "broken"}, audio_duration=90.0, language=language)
+
+    def realign_fragment(self, audio_path, cleaned_text, language, audio_start, audio_end, work_dir, logs, attempt_id):
+        self.realign_calls += 1
+        tokens = []
+        visible_index = 0
+        step = 0.18 if self.repair_succeeds else 3.0
+        confidence = 0.92 if self.repair_succeeds else 0.01
+        for idx, ch in enumerate(cleaned_text.display_text):
+            if ch.isspace():
+                continue
+            start = visible_index * step
+            tokens.append(AlignmentToken(ch, start, start + 0.12, idx, idx + 1, confidence=confidence))
+            visible_index += 1
+        logs.append(f"fake local realign {attempt_id}")
+        return AlignmentResult(tokens=tokens, raw={"engine": "fake-local"}, audio_duration=visible_index * step)
+
+
 class PipelineTests(unittest.TestCase):
     def test_run_alignment_job_with_fake_engine_exports_files(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -51,6 +91,69 @@ class PipelineTests(unittest.TestCase):
             self.assertTrue(result.alignment_json_path.exists())
             self.assertIn("这是第一句话", result.srt_path.read_text(encoding="utf-8"))
             self.assertEqual(result.quality_report["unaligned_text_ratio"], 0.0)
+            self.assertEqual(result.quality_report["timeline_status"], "ok")
+
+    def test_local_realign_repairs_suspect_timeline(self):
+        script = (
+            "その時、四つ目の苦しみが、わかったんです。"
+            "父親も、息子も、二人とも、心の中では、ずっと、「会いたい」と思っていた。"
+            "待っている、うちに、間に合わなく、なってしまったんです。"
+            "体が動かなくなるのも、居場所がなくなるのも、これは、避けられません。"
+        )
+        engine = BrokenTimelineEngine(repair_succeeds=True)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = run_alignment_job(
+                audio_path=Path(temp_dir) / "dummy.mp3",
+                script_text=script,
+                language="ja",
+                subtitle_profile="youtube_long",
+                output_dir=Path(temp_dir) / "out",
+                min_duration=1.2,
+                max_duration=6.5,
+                max_chars_per_line=18,
+                generate_vtt=False,
+                engine=engine,
+            )
+
+        self.assertGreater(engine.realign_calls, 0)
+        self.assertEqual(result.quality_report["timeline_status"], "repaired")
+        self.assertGreaterEqual(result.quality_report["timeline_confidence_score"], 90)
+        self.assertGreater(len(result.quality_report["repaired_ranges"]), 0)
+        self.assertEqual(result.quality_report["low_confidence_ranges"], [])
+        self.assertIn("before_repair", result.alignment_payload["token_diagnostics"])
+        self.assertIn("after_repair", result.alignment_payload["token_diagnostics"])
+        before = result.alignment_payload["token_diagnostics"]["before_repair"]
+        after = result.alignment_payload["token_diagnostics"]["after_repair"]
+        self.assertGreater(before["low_confidence_token_count"], after["low_confidence_token_count"])
+        self.assertTrue(validate_subtitle_continuity(result.cues, script))
+
+    def test_failed_local_realign_marks_timeline_needs_review_but_exports(self):
+        script = (
+            "その時、四つ目の苦しみが、わかったんです。"
+            "父親も、息子も、二人とも、心の中では、ずっと、「会いたい」と思っていた。"
+            "待っている、うちに、間に合わなく、なってしまったんです。"
+            "体が動かなくなるのも、居場所がなくなるのも、これは、避けられません。"
+        )
+        engine = BrokenTimelineEngine(repair_succeeds=False)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = run_alignment_job(
+                audio_path=Path(temp_dir) / "dummy.mp3",
+                script_text=script,
+                language="ja",
+                subtitle_profile="youtube_long",
+                output_dir=Path(temp_dir) / "out",
+                min_duration=1.2,
+                max_duration=6.5,
+                max_chars_per_line=18,
+                generate_vtt=False,
+                engine=engine,
+            )
+            self.assertTrue(result.srt_path.exists())
+
+        self.assertEqual(result.quality_report["timeline_status"], "needs_review")
+        self.assertLessEqual(result.quality_report["quality_score"], 75)
+        self.assertGreater(len(result.quality_report["low_confidence_ranges"]), 0)
+        self.assertIn("低置信时间轴", " ".join(result.quality_report["warnings"]))
 
     def test_timeline_repair_rebuilds_broken_tail(self):
         parts = [
@@ -113,7 +216,8 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(info["detected_index"], 3)
         self.assertEqual(info["start_index"], 2)
         self.assertEqual(info["mode"], "anchor_interpolated")
-        self.assertIn("可信锚点", " ".join(logs))
+        self.assertEqual(info["confidence"], "low")
+        self.assertIn("低置信估算", " ".join(logs))
 
         heart_cue = next(cue for cue in repaired if "心の中" in cue.text)
         self.assertLess(heart_cue.start, 8.0)

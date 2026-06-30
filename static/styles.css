@@ -855,6 +855,11 @@ tbody tr:nth-child(even) td {
     font-size: 13px;
 }
 
+.download-item.needs-review .download-meta {
+    color: var(--warning);
+    font-weight: 760;
+}
+
 .download-link {
     display: grid;
     place-items: center;

@@ -88,6 +88,40 @@ def preprocess_audio(audio_path: str | Path, work_dir: str | Path) -> AudioInfo:
     return AudioInfo(original_path=source, wav_path=wav_path, duration=duration)
 
 
+def clip_audio_segment(
+    audio_path: str | Path,
+    output_path: str | Path,
+    start_seconds: float,
+    end_seconds: float,
+) -> Path:
+    source = Path(audio_path)
+    target = Path(output_path)
+    if end_seconds <= start_seconds:
+        raise InputError("局部音频裁剪时间范围无效")
+    ffmpeg, _ = require_ffmpeg()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    command = [
+        ffmpeg,
+        "-y",
+        "-ss",
+        f"{max(0.0, start_seconds):.3f}",
+        "-i",
+        str(source),
+        "-t",
+        f"{max(0.1, end_seconds - start_seconds):.3f}",
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        str(target),
+    ]
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        raise InputError(f"局部音频裁剪失败: {result.stderr.strip()}")
+    return target
+
+
 def _probe_duration_with_ffprobe(ffprobe: str, audio_path: Path) -> float:
     command = [
         ffprobe,

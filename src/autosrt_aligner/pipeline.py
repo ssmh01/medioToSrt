@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -63,6 +64,29 @@ def run_alignment_job(
     logs.append(f"对齐 token 数: {len(alignment.tokens)}")
 
     mapped_tokens = _ensure_mapped_tokens(alignment.tokens, cleaned)
+    pre_repair_token_diagnostics = _token_timeline_diagnostics(
+        mapped_tokens,
+        cleaned.display_text,
+        audio_duration,
+        profile,
+    )
+    mapped_tokens, timeline_summary = _repair_tokens_with_local_realign(
+        mapped_tokens,
+        cleaned.display_text,
+        engine,
+        align_audio_path,
+        work_dir,
+        language,
+        audio_duration,
+        profile,
+        logs,
+    )
+    post_repair_token_diagnostics = _token_timeline_diagnostics(
+        mapped_tokens,
+        cleaned.display_text,
+        audio_duration,
+        profile,
+    )
     cues = split_subtitles(cleaned.display_text, mapped_tokens, language, profile)
     cues, timeline_repair = _repair_timeline_if_needed(
         cues,
@@ -75,15 +99,13 @@ def run_alignment_job(
     )
     quality_report = build_quality_report(cues, cleaned.display_text, audio_duration, profile, language)
     if timeline_repair is not None:
+        timeline_summary.register_fallback(timeline_repair)
+    _apply_timeline_quality(quality_report, timeline_summary)
+    if timeline_repair is not None:
         quality_report["timeline_repaired"] = True
         quality_report["timeline_repair"] = timeline_repair
         quality_report["timeline_repair_mode"] = timeline_repair.get("mode")
         quality_report["timeline_repair_confidence"] = timeline_repair.get("confidence")
-        warning = "检测到对齐时间轴断层，已用可信锚点重建后段时间轴"
-        if timeline_repair.get("confidence") == "low":
-            warning = "检测到对齐时间轴断层，后段时间轴为低置信估算，可能存在局部漂移"
-            quality_report["quality_score"] = min(quality_report.get("quality_score", 100), 86)
-        quality_report.setdefault("warnings", []).append(warning)
 
     srt_path = out_dir / "output.srt"
     srt_path.write_text(export_srt(cues), encoding="utf-8")
@@ -101,6 +123,11 @@ def run_alignment_job(
         tokens=mapped_tokens,
         cues=cues,
         audio_duration=audio_duration,
+        timeline_summary=timeline_summary.to_payload(),
+        token_diagnostics={
+            "before_repair": pre_repair_token_diagnostics,
+            "after_repair": post_repair_token_diagnostics,
+        },
     )
     alignment_json_path = out_dir / "alignment.json"
     alignment_json_path.write_text(
@@ -126,6 +153,653 @@ def run_alignment_job(
         alignment_payload=alignment_payload,
         logs=logs,
     )
+
+
+@dataclass
+class TimelineRange:
+    start_char: int
+    end_char: int
+    audio_start: float
+    audio_end: float
+    reasons: list[str]
+    severity: str = "medium"
+    index: int = 0
+
+    @property
+    def duration(self) -> float:
+        return max(0.0, self.audio_end - self.audio_start)
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "index": self.index,
+            "start_char": self.start_char,
+            "end_char": self.end_char,
+            "audio_start": round(self.audio_start, 3),
+            "audio_end": round(self.audio_end, 3),
+            "duration": round(self.duration, 3),
+            "reasons": self.reasons,
+            "severity": self.severity,
+        }
+
+
+@dataclass
+class TimelineRepairSummary:
+    suspect_ranges: list[dict[str, Any]] = field(default_factory=list)
+    repaired_ranges: list[dict[str, Any]] = field(default_factory=list)
+    low_confidence_ranges: list[dict[str, Any]] = field(default_factory=list)
+    local_realign_attempts: list[dict[str, Any]] = field(default_factory=list)
+    max_anchor_gap_seconds: float = 0.0
+
+    def register_fallback(self, repair_info: dict[str, Any]) -> None:
+        payload = dict(repair_info)
+        payload["mode"] = repair_info.get("mode") or "fallback_estimate"
+        payload["confidence"] = "low"
+        self.low_confidence_ranges.append(payload)
+
+    @property
+    def status(self) -> str:
+        if self.low_confidence_ranges:
+            return "needs_review"
+        if self.repaired_ranges:
+            return "repaired"
+        return "ok"
+
+    @property
+    def confidence_score(self) -> int:
+        if self.low_confidence_ranges:
+            return 60
+        if self.repaired_ranges:
+            return 92
+        if self.suspect_ranges:
+            return 88
+        return 100
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "timeline_status": self.status,
+            "timeline_confidence_score": self.confidence_score,
+            "suspect_ranges": self.suspect_ranges,
+            "repaired_ranges": self.repaired_ranges,
+            "low_confidence_ranges": self.low_confidence_ranges,
+            "local_realign_attempts": self.local_realign_attempts,
+            "max_anchor_gap_seconds": round(self.max_anchor_gap_seconds, 3),
+        }
+
+
+def _repair_tokens_with_local_realign(
+    mapped_tokens: list[AlignmentToken],
+    display_text: str,
+    engine: AlignmentEngine,
+    align_audio_path: Path,
+    work_dir: Path,
+    language: str,
+    audio_duration: float | None,
+    profile: Any,
+    logs: list[str],
+) -> tuple[list[AlignmentToken], TimelineRepairSummary]:
+    summary = TimelineRepairSummary(
+        max_anchor_gap_seconds=_max_trusted_anchor_gap(display_text, mapped_tokens, audio_duration, profile)
+    )
+    if not audio_duration or audio_duration <= 0:
+        return mapped_tokens, summary
+
+    suspect_ranges = _detect_suspect_timeline_ranges(display_text, mapped_tokens, audio_duration, profile)
+    if not suspect_ranges:
+        return mapped_tokens, summary
+
+    summary.suspect_ranges = [range_.to_payload() for range_ in suspect_ranges]
+    logs.append(f"检测到 {len(suspect_ranges)} 个疑似时间轴坏段，开始局部重对齐")
+
+    repaired_tokens = list(mapped_tokens)
+    local_realign = getattr(engine, "realign_fragment", None)
+    for range_ in suspect_ranges:
+        if not callable(local_realign):
+            summary.low_confidence_ranges.append(
+                {
+                    **range_.to_payload(),
+                    "mode": "local_realign_unavailable",
+                    "confidence": "low",
+                }
+            )
+            continue
+
+        result = _try_local_realign_range(
+            local_realign,
+            align_audio_path,
+            display_text,
+            range_,
+            work_dir,
+            language,
+            profile,
+            logs,
+            summary,
+        )
+        if result:
+            repaired_tokens = _replace_tokens_in_char_range(
+                repaired_tokens,
+                range_.start_char,
+                range_.end_char,
+                result,
+            )
+            summary.repaired_ranges.append(
+                {
+                    **range_.to_payload(),
+                    "mode": "local_realign",
+                    "confidence": "high",
+                    "token_count": len(result),
+                }
+            )
+        else:
+            summary.low_confidence_ranges.append(
+                {
+                    **range_.to_payload(),
+                    "mode": "local_realign_failed",
+                    "confidence": "low",
+                }
+            )
+
+    repaired_tokens.sort(key=lambda token: ((token.start_char or 0), token.start, token.end))
+    return repaired_tokens, summary
+
+
+def _try_local_realign_range(
+    local_realign: Any,
+    align_audio_path: Path,
+    display_text: str,
+    range_: TimelineRange,
+    work_dir: Path,
+    language: str,
+    profile: Any,
+    logs: list[str],
+    summary: TimelineRepairSummary,
+) -> list[AlignmentToken] | None:
+    fragment_start, fragment_end = _trim_char_range(display_text, range_.start_char, range_.end_char)
+    if fragment_end <= fragment_start:
+        return None
+
+    fragment_text = display_text[fragment_start:fragment_end]
+    try:
+        fragment_cleaned = clean_script_text(fragment_text, preserve_punctuation=True)
+    except Exception as exc:
+        summary.local_realign_attempts.append(
+            _attempt_payload(range_, 0, range_.audio_start, range_.audio_end, "failed", f"text_clean_failed:{exc}")
+        )
+        return None
+
+    for attempt_index, padding in enumerate((4.0, 10.0), start=1):
+        audio_start = max(0.0, range_.audio_start - padding)
+        audio_end = range_.audio_end + padding
+        attempt_id = f"{range_.index}_{attempt_index}"
+        try:
+            alignment = local_realign(
+                align_audio_path,
+                fragment_cleaned,
+                language,
+                audio_start,
+                audio_end,
+                work_dir,
+                logs,
+                attempt_id,
+            )
+            local_tokens = _ensure_mapped_tokens(alignment.tokens, fragment_cleaned)
+            global_tokens = _offset_local_tokens(local_tokens, fragment_start, audio_start)
+            validation_error = _validate_local_realign_tokens(
+                global_tokens,
+                display_text,
+                fragment_start,
+                fragment_end,
+                audio_start,
+                audio_end,
+                profile,
+            )
+            if validation_error is None:
+                summary.local_realign_attempts.append(
+                    _attempt_payload(range_, attempt_index, audio_start, audio_end, "succeeded", None, len(global_tokens))
+                )
+                return global_tokens
+            summary.local_realign_attempts.append(
+                _attempt_payload(range_, attempt_index, audio_start, audio_end, "failed", validation_error, len(global_tokens))
+            )
+        except Exception as exc:
+            summary.local_realign_attempts.append(
+                _attempt_payload(range_, attempt_index, audio_start, audio_end, "failed", str(exc))
+            )
+
+    return None
+
+
+def _attempt_payload(
+    range_: TimelineRange,
+    attempt_index: int,
+    audio_start: float,
+    audio_end: float,
+    status: str,
+    reason: str | None,
+    token_count: int = 0,
+) -> dict[str, Any]:
+    return {
+        "range_index": range_.index,
+        "attempt": attempt_index,
+        "audio_start": round(audio_start, 3),
+        "audio_end": round(audio_end, 3),
+        "status": status,
+        "reason": reason,
+        "token_count": token_count,
+    }
+
+
+def _detect_suspect_timeline_ranges(
+    display_text: str,
+    tokens: list[AlignmentToken],
+    audio_duration: float,
+    profile: Any,
+) -> list[TimelineRange]:
+    sorted_tokens = sorted(
+        [
+            token
+            for token in tokens
+            if token.start_char is not None and token.end_char is not None
+        ],
+        key=lambda token: (token.start_char or 0, token.end_char or 0),
+    )
+    if len(sorted_tokens) < 2:
+        return []
+
+    raw_ranges: list[tuple[int, int, str, str]] = []
+    low_start: int | None = None
+    low_end: int | None = None
+    zero_start: int | None = None
+    zero_end: int | None = None
+
+    for prev, cur in zip(sorted_tokens, sorted_tokens[1:]):
+        prev_end = prev.end_char or 0
+        cur_end = cur.end_char or prev_end
+        if cur_end <= prev_end:
+            continue
+        visible_delta = _visible_len(display_text[prev_end:cur_end])
+        time_delta = cur.start - max(prev.end, prev.start)
+        if cur.start < prev.start - 0.12 or cur.end < prev.end - 0.12:
+            raw_ranges.append((max(0, prev_end - 1), cur_end, "time_reversal", "high"))
+        elif visible_delta > 0:
+            cps = visible_delta / max(time_delta, 0.02)
+            if time_delta > 6.0 and (visible_delta <= 24 or cps < 1.25):
+                raw_ranges.append((prev_end, cur_end, "timestamp_jump", "high"))
+            elif cps > max(profile.max_chars_per_second * 2.8, 28.0) and visible_delta >= 8:
+                raw_ranges.append((prev_end, cur_end, "cps_spike", "medium"))
+
+        low_conf = cur.confidence is not None and cur.confidence < 0.12
+        if low_conf:
+            low_start = cur.start_char if low_start is None else min(low_start, cur.start_char or low_start)
+            low_end = max(low_end or 0, cur.end_char or 0)
+        elif low_start is not None and low_end is not None:
+            if _visible_len(display_text[low_start:low_end]) >= 18:
+                raw_ranges.append((low_start, low_end, "low_confidence_run", "medium"))
+            low_start = None
+            low_end = None
+
+        zero_like = cur.duration <= 0.02
+        if zero_like:
+            zero_start = cur.start_char if zero_start is None else min(zero_start, cur.start_char or zero_start)
+            zero_end = max(zero_end or 0, cur.end_char or 0)
+        elif zero_start is not None and zero_end is not None:
+            if _visible_len(display_text[zero_start:zero_end]) >= 20:
+                raw_ranges.append((zero_start, zero_end, "zero_duration_run", "medium"))
+            zero_start = None
+            zero_end = None
+
+        if cur.start >= audio_duration - 0.5:
+            remaining = _visible_len(display_text[cur.start_char or 0 :])
+            if remaining >= 80:
+                raw_ranges.append((cur.start_char or prev_end, len(display_text), "end_collapse", "high"))
+                break
+
+    if low_start is not None and low_end is not None and _visible_len(display_text[low_start:low_end]) >= 18:
+        raw_ranges.append((low_start, low_end, "low_confidence_run", "medium"))
+    if zero_start is not None and zero_end is not None and _visible_len(display_text[zero_start:zero_end]) >= 20:
+        raw_ranges.append((zero_start, zero_end, "zero_duration_run", "medium"))
+
+    expanded = [
+        _expand_raw_suspect_range(display_text, start, end, reason, severity)
+        for start, end, reason, severity in raw_ranges
+        if end > start
+    ]
+    merged = _merge_suspect_ranges(expanded)
+    chunked = _chunk_suspect_ranges(display_text, merged, sorted_tokens, audio_duration, profile)
+    for index, range_ in enumerate(chunked, start=1):
+        range_.index = index
+    return chunked[:8]
+
+
+def _expand_raw_suspect_range(
+    display_text: str,
+    start: int,
+    end: int,
+    reason: str,
+    severity: str,
+) -> tuple[int, int, set[str], str]:
+    expanded_start = _previous_sentence_boundary(display_text, start, 90)
+    expanded_end = _next_sentence_boundary(display_text, end, 140)
+    return expanded_start, expanded_end, {reason}, severity
+
+
+def _previous_sentence_boundary(text: str, start: int, limit: int) -> int:
+    lower = max(0, start - limit)
+    for index in range(start - 1, lower - 1, -1):
+        if text[index] in "。！？!?」』":
+            return index + 1
+    return lower
+
+
+def _next_sentence_boundary(text: str, end: int, limit: int) -> int:
+    upper = min(len(text), end + limit)
+    for index in range(max(0, end), upper):
+        if text[index] in "。！？!?」』":
+            return index + 1
+    return upper
+
+
+def _merge_suspect_ranges(ranges: list[tuple[int, int, set[str], str]]) -> list[tuple[int, int, set[str], str]]:
+    if not ranges:
+        return []
+    ordered = sorted(ranges, key=lambda item: item[0])
+    merged: list[tuple[int, int, set[str], str]] = []
+    for start, end, reasons, severity in ordered:
+        if not merged or start > merged[-1][1] + 240:
+            merged.append((start, end, set(reasons), severity))
+            continue
+        prev_start, prev_end, prev_reasons, prev_severity = merged[-1]
+        merged[-1] = (
+            prev_start,
+            max(prev_end, end),
+            prev_reasons | reasons,
+            "high" if "high" in {prev_severity, severity} else "medium",
+        )
+    return merged
+
+
+def _chunk_suspect_ranges(
+    display_text: str,
+    ranges: list[tuple[int, int, set[str], str]],
+    tokens: list[AlignmentToken],
+    audio_duration: float,
+    profile: Any,
+) -> list[TimelineRange]:
+    chunked: list[TimelineRange] = []
+    max_visible = max(420, profile.max_chars_total * 16)
+    for start, end, reasons, severity in ranges:
+        cursor = start
+        while cursor < end:
+            target = _char_after_visible_count(display_text, cursor, end, max_visible)
+            chunk_end = _next_sentence_boundary(display_text, target, 100) if target < end else end
+            chunk_end = max(chunk_end, min(end, target))
+            audio_start, audio_end = _estimate_audio_window(
+                display_text,
+                tokens,
+                cursor,
+                chunk_end,
+                start,
+                end,
+                audio_duration,
+            )
+            chunked.append(
+                TimelineRange(
+                    start_char=cursor,
+                    end_char=chunk_end,
+                    audio_start=audio_start,
+                    audio_end=audio_end,
+                    reasons=sorted(reasons),
+                    severity=severity,
+                )
+            )
+            cursor = chunk_end
+    return chunked
+
+
+def _estimate_audio_window(
+    display_text: str,
+    tokens: list[AlignmentToken],
+    chunk_start: int,
+    chunk_end: int,
+    range_start: int,
+    range_end: int,
+    audio_duration: float,
+) -> tuple[float, float]:
+    prev_token = _nearest_token_before(tokens, range_start)
+    next_token = _nearest_token_after(tokens, range_end, audio_duration)
+    anchor_start_time = max(0.0, (prev_token.end if prev_token else 0.0))
+    anchor_end_time = min(audio_duration, (next_token.start if next_token else audio_duration))
+    if anchor_end_time <= anchor_start_time:
+        anchor_end_time = audio_duration
+
+    total_visible = max(1, _visible_len(display_text[range_start:range_end]))
+    chunk_start_visible = _visible_len(display_text[range_start:chunk_start])
+    chunk_end_visible = _visible_len(display_text[range_start:chunk_end])
+    duration = max(1.0, anchor_end_time - anchor_start_time)
+    estimated_start = anchor_start_time + duration * (chunk_start_visible / total_visible)
+    estimated_end = anchor_start_time + duration * (chunk_end_visible / total_visible)
+    min_duration = max(8.0, _visible_len(display_text[chunk_start:chunk_end]) / 5.0)
+    if estimated_end - estimated_start < min_duration:
+        center = (estimated_start + estimated_end) / 2
+        estimated_start = center - min_duration / 2
+        estimated_end = center + min_duration / 2
+    return max(0.0, estimated_start), min(audio_duration, max(estimated_start + 0.5, estimated_end))
+
+
+def _nearest_token_before(tokens: list[AlignmentToken], char_pos: int) -> AlignmentToken | None:
+    candidates = [
+        token
+        for token in tokens
+        if token.end_char is not None and token.end_char <= char_pos and (token.confidence is None or token.confidence >= 0.2)
+    ]
+    return max(candidates, key=lambda token: token.end_char or 0, default=None)
+
+
+def _nearest_token_after(tokens: list[AlignmentToken], char_pos: int, audio_duration: float) -> AlignmentToken | None:
+    candidates = [
+        token
+        for token in tokens
+        if token.start_char is not None
+        and token.start_char >= char_pos
+        and token.start < audio_duration - 0.5
+        and (token.confidence is None or token.confidence >= 0.2)
+    ]
+    return min(candidates, key=lambda token: token.start_char or 0, default=None)
+
+
+def _trim_char_range(text: str, start: int, end: int) -> tuple[int, int]:
+    while start < end and text[start].isspace():
+        start += 1
+    while end > start and text[end - 1].isspace():
+        end -= 1
+    return start, end
+
+
+def _offset_local_tokens(
+    local_tokens: list[AlignmentToken],
+    fragment_start: int,
+    audio_start: float,
+) -> list[AlignmentToken]:
+    return [
+        AlignmentToken(
+            text=token.text,
+            start=max(0.0, token.start + audio_start),
+            end=max(token.start + audio_start, token.end + audio_start),
+            start_char=(token.start_char or 0) + fragment_start,
+            end_char=(token.end_char or 0) + fragment_start,
+            confidence=token.confidence,
+        )
+        for token in local_tokens
+        if token.start_char is not None and token.end_char is not None
+    ]
+
+
+def _validate_local_realign_tokens(
+    tokens: list[AlignmentToken],
+    display_text: str,
+    fragment_start: int,
+    fragment_end: int,
+    audio_start: float,
+    audio_end: float,
+    profile: Any,
+) -> str | None:
+    if not tokens:
+        return "no_tokens"
+    tokens = sorted(tokens, key=lambda token: (token.start_char or 0, token.start))
+    if (tokens[0].start_char or 0) > fragment_start + 6:
+        return "missing_fragment_start"
+    if (tokens[-1].end_char or 0) < fragment_end - 6:
+        return "missing_fragment_end"
+    last_time = audio_start
+    low_conf_chars = 0
+    total_chars = max(1, _visible_len(display_text[fragment_start:fragment_end]))
+    for token in tokens:
+        if token.start < audio_start - 0.2 or token.end > audio_end + 0.2:
+            return "token_outside_audio_window"
+        if token.start < last_time - 0.12:
+            return "time_reversal"
+        last_time = max(last_time, token.end)
+        if token.confidence is not None and token.confidence < 0.08:
+            low_conf_chars += _visible_len(display_text[token.start_char or 0 : token.end_char or 0])
+    duration = max(0.1, tokens[-1].end - tokens[0].start)
+    cps = total_chars / duration
+    if cps < 1.6:
+        return f"too_slow:{cps:.3f}"
+    if cps > max(profile.max_chars_per_second * 1.8, 18.0):
+        return f"too_fast:{cps:.3f}"
+    if low_conf_chars / total_chars > 0.55:
+        return "low_confidence_ratio"
+    return None
+
+
+def _replace_tokens_in_char_range(
+    tokens: list[AlignmentToken],
+    start_char: int,
+    end_char: int,
+    replacement: list[AlignmentToken],
+) -> list[AlignmentToken]:
+    kept = [
+        token
+        for token in tokens
+        if token.start_char is None
+        or token.end_char is None
+        or token.end_char <= start_char
+        or token.start_char >= end_char
+    ]
+    return [*kept, *replacement]
+
+
+def _max_trusted_anchor_gap(
+    display_text: str,
+    tokens: list[AlignmentToken],
+    audio_duration: float | None,
+    profile: Any,
+) -> float:
+    if not audio_duration:
+        return 0.0
+    anchors = _trusted_timeline_anchors(display_text, tokens, 0, 0.0, len(display_text), audio_duration, profile)
+    if len(anchors) < 2:
+        return 0.0
+    return max((cur_time - prev_time for (_, prev_time), (_, cur_time) in zip(anchors, anchors[1:])), default=0.0)
+
+
+def _token_timeline_diagnostics(
+    tokens: list[AlignmentToken],
+    display_text: str,
+    audio_duration: float | None,
+    profile: Any,
+) -> dict[str, Any]:
+    mapped = sorted(
+        [
+            token
+            for token in tokens
+            if token.start_char is not None and token.end_char is not None
+        ],
+        key=lambda token: (token.start_char or 0, token.end_char or 0, token.start),
+    )
+    if not mapped:
+        return {
+            "token_count": len(tokens),
+            "mapped_token_count": 0,
+            "text_coverage_ratio": 0.0,
+            "time_reversal_count": 0,
+            "zero_duration_count": 0,
+            "low_confidence_token_count": 0,
+            "timestamp_jump_count": 0,
+            "cps_spike_count": 0,
+            "max_token_gap_seconds": 0.0,
+            "end_collapse_visible_chars": 0,
+        }
+
+    covered_positions: set[int] = set()
+    low_confidence_token_count = 0
+    low_confidence_visible_chars = 0
+    zero_duration_count = 0
+    for token in mapped:
+        start_char = max(0, token.start_char or 0)
+        end_char = min(len(display_text), token.end_char or start_char)
+        for char_index in range(start_char, end_char):
+            if not display_text[char_index].isspace():
+                covered_positions.add(char_index)
+        if token.duration <= 0.02:
+            zero_duration_count += 1
+        if token.confidence is not None and token.confidence < 0.12:
+            low_confidence_token_count += 1
+            low_confidence_visible_chars += _visible_len(display_text[start_char:end_char])
+
+    time_reversal_count = 0
+    timestamp_jump_count = 0
+    cps_spike_count = 0
+    max_token_gap = 0.0
+    for prev, cur in zip(mapped, mapped[1:]):
+        if cur.start < prev.start - 0.12 or cur.end < prev.end - 0.12:
+            time_reversal_count += 1
+        time_gap = cur.start - max(prev.end, prev.start)
+        max_token_gap = max(max_token_gap, time_gap)
+        prev_end_char = prev.end_char or 0
+        cur_end_char = cur.end_char or prev_end_char
+        visible_delta = _visible_len(display_text[prev_end_char:cur_end_char])
+        if visible_delta <= 0:
+            continue
+        cps = visible_delta / max(time_gap, 0.02)
+        if time_gap > 6.0 and (visible_delta <= 24 or cps < 1.25):
+            timestamp_jump_count += 1
+        if cps > max(profile.max_chars_per_second * 2.8, 28.0) and visible_delta >= 8:
+            cps_spike_count += 1
+
+    end_collapse_visible_chars = 0
+    if audio_duration:
+        for token in mapped:
+            if token.start >= audio_duration - 0.5:
+                end_collapse_visible_chars = _visible_len(display_text[token.start_char or 0 :])
+                break
+
+    visible_total = max(1, _visible_len(display_text))
+    return {
+        "token_count": len(tokens),
+        "mapped_token_count": len(mapped),
+        "first_token_time": round(mapped[0].start, 3),
+        "last_token_time": round(mapped[-1].end, 3),
+        "text_coverage_ratio": round(len(covered_positions) / visible_total, 6),
+        "time_reversal_count": time_reversal_count,
+        "zero_duration_count": zero_duration_count,
+        "low_confidence_token_count": low_confidence_token_count,
+        "low_confidence_visible_chars": low_confidence_visible_chars,
+        "timestamp_jump_count": timestamp_jump_count,
+        "cps_spike_count": cps_spike_count,
+        "max_token_gap_seconds": round(max_token_gap, 3),
+        "end_collapse_visible_chars": end_collapse_visible_chars,
+    }
+
+
+def _apply_timeline_quality(quality_report: dict[str, Any], summary: TimelineRepairSummary) -> None:
+    payload = summary.to_payload()
+    quality_report.update(payload)
+    warnings = quality_report.setdefault("warnings", [])
+    if summary.status == "needs_review":
+        quality_report["quality_score"] = min(quality_report.get("quality_score", 100), 75)
+        warnings.append("存在低置信时间轴估算段，需人工检查时间轴")
+    elif summary.status == "repaired":
+        quality_report["quality_score"] = min(quality_report.get("quality_score", 100), 95)
 
 
 def _repair_timeline_if_needed(
@@ -186,20 +860,15 @@ def _repair_timeline_if_needed(
         "end_time": round(tail_end_time, 3),
         "tail_chars": tail_visible_chars,
         "mode": mode,
-        "confidence": confidence,
+        "confidence": "low",
+        "estimated_confidence": confidence,
         "anchor_count": anchor_count,
         "reason": _timeline_break_reason(cues, break_index, profile),
     }
-    if confidence == "low":
-        logs.append(
-            "检测到对齐时间轴断层，已从第 "
-            f"{repair_start_index + 1} 条字幕开始用低置信估算重建后段时间轴"
-        )
-    else:
-        logs.append(
-            "检测到对齐时间轴断层，已从第 "
-            f"{repair_start_index + 1} 条字幕开始用可信锚点重建后段时间轴"
-        )
+    logs.append(
+        "检测到对齐时间轴断层，已从第 "
+        f"{repair_start_index + 1} 条字幕开始用低置信估算重建后段时间轴"
+    )
     return repaired, repair_info
 
 
@@ -613,6 +1282,8 @@ def _build_alignment_payload(
     tokens: list[AlignmentToken],
     cues: list[SubtitleCue],
     audio_duration: float | None,
+    timeline_summary: dict[str, Any] | None = None,
+    token_diagnostics: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         "language": language,
@@ -620,6 +1291,8 @@ def _build_alignment_payload(
         "audio_duration": audio_duration,
         "display_text_length": len(cleaned_display),
         "align_text_length": len(cleaned_align),
+        "timeline_diagnostics": timeline_summary or {},
+        "token_diagnostics": token_diagnostics or {},
         "engine_result": alignment_raw,
         "tokens": [
             {
