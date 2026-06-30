@@ -365,6 +365,7 @@ def _smooth_timing(cues: list[SubtitleCue], profile: SubtitleProfile, language: 
     for idx, cue in enumerate(smoothed):
         start = max(0.0, cue.start)
         end = max(start + 0.1, cue.end)
+        end = min(end, start + profile.max_duration)
         if idx + 1 < len(smoothed):
             end = min(end, smoothed[idx + 1].start - min_gap)
         repaired.append(replace(cue, index=idx + 1, start=start, end=max(start + 0.1, end)))
