@@ -13,9 +13,35 @@ from .text import render_display_segment, validate_subtitle_continuity
 STRONG_PUNCT = set("。！？!?…")
 MID_PUNCT = set("，、,;；:：")
 JA_BAD_EDGE = {"は", "が", "を", "に", "で", "と", "も", "の"}
+ZH_BAD_EDGE = {
+    "的",
+    "地",
+    "得",
+    "把",
+    "被",
+    "和",
+    "与",
+    "跟",
+    "在",
+    "是",
+    "就",
+    "也",
+    "都",
+    "要",
+    "会",
+    "能",
+    "很",
+    "又",
+    "还",
+    "再",
+}
+ZH_QUOTE_FOLLOWERS = set("的一声地了着过吗呢吧啊呀嘛她他它们")
 EN_BAD_EDGE = {"a", "an", "the", "of", "to", "in", "on", "at", "for", "and", "or"}
 OPEN_QUOTES = set("「『“‘（([【")
 CLOSE_QUOTES = set("」』”’）)]】")
+STRAIGHT_QUOTES = set("\"'")
+QUOTE_CHARS = OPEN_QUOTES | CLOSE_QUOTES | STRAIGHT_QUOTES
+ZH_CJK_RE = re.compile(r"[\u3400-\u9fff]")
 JA_HIRAGANA_RE = re.compile(r"[\u3040-\u309f]")
 JA_KATAKANA_RE = re.compile(r"[\u30a0-\u30ffー]")
 JA_KANJI_RE = re.compile(r"[\u3400-\u9fff々]")
@@ -43,6 +69,10 @@ JA_SMALL_KANA = {
     "ー",
 }
 JA_REPAIR_SCAN_CHARS = 12
+ZH_REPAIR_SCAN_CHARS = 12
+ZH_FORCE_SPLIT_CHARS = 38
+ZH_LONG_CUE_CHARS = 34
+ZH_COMFORT_CPS = 8.5
 VISUAL_GAP_TARGET_SECONDS = 0.20
 
 
@@ -86,6 +116,8 @@ def split_subtitles(
         token_start = token_end + 1
 
     cues = _repair_unsafe_boundaries(cues, display_text, language, profile)
+    cues = _split_overlong_zh_cues(cues, display_text, tokens, language, profile)
+    cues = _repair_unsafe_boundaries(cues, display_text, language, profile)
     cues = _repair_timing(cues, profile, language)
     _annotate_warnings(cues, profile)
     if not validate_subtitle_continuity(cues, display_text):
@@ -114,7 +146,7 @@ def _choose_break(
             if score > best_score:
                 best_score = score
                 best_index = index
-        if duration >= profile.max_duration or chars >= _soft_char_limit(profile):
+        if duration >= profile.max_duration or chars >= _soft_char_limit(profile, language):
             break
     if best_score == float("-inf"):
         return hard_limit
@@ -146,10 +178,15 @@ def _break_score(
         score -= abs(duration - ideal_mid) * 4
 
     chars = _visible_len(text)
-    ideal_chars = profile.max_chars_total * 0.72
+    ideal_chars = _ideal_chars(profile, language)
     score -= abs(chars - ideal_chars) * 0.55
     if chars > profile.max_chars_total:
         score -= 18 + (chars - profile.max_chars_total) * 2.2
+    if language_group(language) == "cjk":
+        if chars > ZH_LONG_CUE_CHARS:
+            score -= (chars - ZH_LONG_CUE_CHARS) * 3.8
+        if chars > ZH_FORCE_SPLIT_CHARS:
+            score -= 50 + (chars - ZH_FORCE_SPLIT_CHARS) * 5.0
     if chars < max(4, profile.max_chars_per_line * 0.45) and index + 1 < len(tokens):
         score -= 18
 
@@ -192,7 +229,7 @@ def _repair_unsafe_boundaries(
     language: str,
     profile: SubtitleProfile,
 ) -> list[SubtitleCue]:
-    if language_group(language) != "ja" or len(cues) < 2:
+    if language_group(language) not in {"ja", "cjk"} or len(cues) < 2:
         return cues
 
     repaired = list(cues)
@@ -215,6 +252,158 @@ def _repair_unsafe_boundaries(
     return [replace(cue, index=index + 1) for index, cue in enumerate(repaired)]
 
 
+def _split_overlong_zh_cues(
+    cues: list[SubtitleCue],
+    display_text: str,
+    tokens: list[AlignmentToken],
+    language: str,
+    profile: SubtitleProfile,
+) -> list[SubtitleCue]:
+    if language_group(language) != "cjk":
+        return cues
+
+    split_cues: list[SubtitleCue] = []
+    for index, cue in enumerate(cues):
+        next_gap = cues[index + 1].start - cue.end if index + 1 < len(cues) else 0.0
+        pending = [cue]
+        changed = True
+        while changed:
+            changed = False
+            next_pending: list[SubtitleCue] = []
+            for item in pending:
+                if not _should_split_zh_cue(item, next_gap, profile):
+                    next_pending.append(item)
+                    continue
+                moved = _split_zh_cue(item, display_text, tokens, language, profile)
+                if moved is None:
+                    next_pending.append(item)
+                    continue
+                first, second = moved
+                next_pending.extend([first, second])
+                changed = True
+            pending = next_pending
+        split_cues.extend(pending)
+
+    return [replace(cue, index=index + 1) for index, cue in enumerate(split_cues)]
+
+
+def _should_split_zh_cue(cue: SubtitleCue, gap_after: float, profile: SubtitleProfile) -> bool:
+    chars = _visible_len(cue.text)
+    cps = chars / max(cue.duration, 0.1)
+    if chars > ZH_FORCE_SPLIT_CHARS:
+        return True
+    if cps > ZH_COMFORT_CPS:
+        return True
+    if cue.duration >= profile.max_duration - 0.05 and chars > 32:
+        return True
+    return gap_after > 0.8 and cue.duration >= profile.max_duration - 0.05
+
+
+def _split_zh_cue(
+    cue: SubtitleCue,
+    display_text: str,
+    tokens: list[AlignmentToken],
+    language: str,
+    profile: SubtitleProfile,
+) -> tuple[SubtitleCue, SubtitleCue] | None:
+    boundary = _best_zh_split_boundary(display_text, cue.start_char, cue.end_char, profile, language)
+    if boundary is None:
+        return None
+    return _split_cue_at_boundary(cue, boundary, display_text, tokens, profile, language)
+
+
+def _best_zh_split_boundary(
+    display_text: str,
+    start_char: int,
+    end_char: int,
+    profile: SubtitleProfile,
+    language: str,
+) -> int | None:
+    total_visible = _visible_len(display_text[start_char:end_char])
+    if total_visible < 20:
+        return None
+
+    best_boundary: int | None = None
+    best_score = float("-inf")
+    min_left = max(8, int(profile.max_chars_per_line * 0.55))
+    min_right = 6
+    for candidate in range(start_char + 1, end_char):
+        if _is_high_risk_boundary(display_text, candidate, language):
+            continue
+        left_chars = _visible_len(display_text[start_char:candidate])
+        right_chars = _visible_len(display_text[candidate:end_char])
+        if left_chars < min_left or right_chars < min_right:
+            continue
+        score = _repair_candidate_score(display_text, candidate, (start_char + end_char) // 2, language)
+        score -= abs(left_chars - min(ZH_LONG_CUE_CHARS, max(24, total_visible // 2))) * 0.9
+        if left_chars > ZH_FORCE_SPLIT_CHARS:
+            score -= 60
+        if right_chars > ZH_FORCE_SPLIT_CHARS:
+            score -= 60
+        if left_chars <= ZH_LONG_CUE_CHARS and right_chars <= ZH_LONG_CUE_CHARS:
+            score += 18
+        if score > best_score:
+            best_score = score
+            best_boundary = candidate
+    return best_boundary
+
+
+def _split_cue_at_boundary(
+    cue: SubtitleCue,
+    boundary: int,
+    display_text: str,
+    tokens: list[AlignmentToken],
+    profile: SubtitleProfile,
+    language: str,
+) -> tuple[SubtitleCue, SubtitleCue] | None:
+    first_text = wrap_subtitle_text(
+        render_display_segment(display_text[cue.start_char:boundary]),
+        language,
+        profile.max_chars_per_line,
+    )
+    second_text = wrap_subtitle_text(
+        render_display_segment(display_text[boundary:cue.end_char]),
+        language,
+        profile.max_chars_per_line,
+    )
+    if not first_text or not second_text:
+        return None
+
+    boundary_time = _boundary_time_from_tokens(tokens, boundary, cue)
+    min_duration = 0.45
+    if boundary_time - cue.start < min_duration or cue.end - boundary_time < min_duration:
+        return None
+    first_end = min(boundary_time, cue.end - profile.gap_seconds - min_duration)
+    second_start = first_end + profile.gap_seconds
+    if first_end <= cue.start + min_duration or second_start >= cue.end - min_duration:
+        return None
+
+    return (
+        replace(cue, end=first_end, text=first_text, end_char=boundary, warnings=[]),
+        replace(cue, start=second_start, text=second_text, start_char=boundary, warnings=[]),
+    )
+
+
+def _boundary_time_from_tokens(tokens: list[AlignmentToken], boundary: int, cue: SubtitleCue) -> float:
+    prev_token = max(
+        (token for token in tokens if token.end_char is not None and token.end_char <= boundary),
+        key=lambda token: token.end_char or 0,
+        default=None,
+    )
+    next_token = min(
+        (token for token in tokens if token.start_char is not None and token.start_char >= boundary),
+        key=lambda token: token.start_char or 0,
+        default=None,
+    )
+    if prev_token and next_token and cue.start <= prev_token.end <= next_token.start <= cue.end:
+        return (prev_token.end + next_token.start) / 2
+
+    left_chars = max(0, boundary - cue.start_char)
+    total_chars = max(1, cue.end_char - cue.start_char)
+    ratio = min(0.9, max(0.1, left_chars / total_chars))
+    return cue.start + cue.duration * ratio
+
+
 def _find_repair_boundary(
     display_text: str,
     prev: SubtitleCue,
@@ -222,13 +411,14 @@ def _find_repair_boundary(
     boundary: int,
     language: str,
 ) -> int | None:
-    upper = min(cur.end_char - 1, boundary + JA_REPAIR_SCAN_CHARS)
+    scan_chars = ZH_REPAIR_SCAN_CHARS if language_group(language) == "cjk" else JA_REPAIR_SCAN_CHARS
+    upper = min(cur.end_char - 1, boundary + scan_chars)
     forward = range(boundary + 1, upper + 1)
     target = _best_repair_candidate(display_text, forward, boundary, language)
     if target is not None:
         return target
 
-    lower = max(prev.start_char + 1, boundary - JA_REPAIR_SCAN_CHARS)
+    lower = max(prev.start_char + 1, boundary - scan_chars)
     backward = range(lower, boundary)
     return _best_repair_candidate(display_text, backward, boundary, language)
 
@@ -270,6 +460,13 @@ def _repair_candidate_score(display_text: str, char_end: int, original_boundary:
             score -= 38
         if _is_inside_unclosed_quote(display_text, char_end):
             score -= 6
+    elif language_group(language) == "cjk":
+        if prev_char in ZH_BAD_EDGE:
+            score -= 24
+        if next_char in ZH_BAD_EDGE:
+            score -= 8
+        if _is_zh_quote_boundary_risk(display_text, char_end):
+            score -= 90
     score -= abs(char_end - original_boundary) * 0.6
     return score
 
@@ -410,8 +607,16 @@ def _visible_len(text: str) -> int:
     return len(re.sub(r"\s+", "", text))
 
 
-def _soft_char_limit(profile: SubtitleProfile) -> int:
+def _soft_char_limit(profile: SubtitleProfile, language: str) -> int:
+    if language_group(language) == "cjk":
+        return ZH_FORCE_SPLIT_CHARS
     return profile.max_chars_total + max(8, int(profile.max_chars_per_line * 0.6))
+
+
+def _ideal_chars(profile: SubtitleProfile, language: str) -> float:
+    if language_group(language) == "cjk":
+        return min(profile.max_chars_total, 30)
+    return profile.max_chars_total * 0.72
 
 
 def _target_chars_per_second(profile: SubtitleProfile, language: str) -> float:
@@ -419,7 +624,7 @@ def _target_chars_per_second(profile: SubtitleProfile, language: str) -> float:
     if group == "ja":
         return min(profile.max_chars_per_second, 8.5)
     if group == "cjk":
-        return min(profile.max_chars_per_second, 9.5)
+        return min(profile.max_chars_per_second, ZH_COMFORT_CPS)
     return min(profile.max_chars_per_second, 18.0)
 
 
@@ -444,6 +649,8 @@ def _boundary_score(display_text: str, char_end: int, language: str) -> float:
         score += _ja_boundary_score(prev_char, next_char)
         if _is_inside_unclosed_quote(display_text, char_end) and not _is_clear_boundary(prev_char):
             score -= 28
+    elif group == "cjk":
+        score += _zh_boundary_score(display_text, char_end, prev_char, next_char)
     return score
 
 
@@ -469,14 +676,46 @@ def _ja_boundary_score(prev_char: str, next_char: str) -> float:
     return 0.0
 
 
-def _is_high_risk_boundary(display_text: str, char_end: int, language: str) -> bool:
-    if language_group(language) != "ja":
+def _zh_boundary_score(display_text: str, char_end: int, prev_char: str, next_char: str) -> float:
+    if _is_zh_quote_boundary_risk(display_text, char_end):
+        return -95
+    score = 0.0
+    if prev_char in ZH_BAD_EDGE:
+        score -= 24
+    if next_char in ZH_BAD_EDGE:
+        score -= 8
+    if _is_cjk_char(prev_char) and _is_cjk_char(next_char):
+        score -= 6
+    return score
+
+
+def _is_zh_quote_boundary_risk(text: str, char_end: int) -> bool:
+    prev_char = _previous_visible_char(text, char_end)
+    next_char = _next_visible_char(text, char_end)
+    if not prev_char or not next_char:
         return False
+    if next_char in STRONG_PUNCT or next_char in MID_PUNCT:
+        return False
+    if prev_char in OPEN_QUOTES or prev_char in STRAIGHT_QUOTES:
+        return _is_cjk_char(next_char) or next_char in ZH_QUOTE_FOLLOWERS
+    if next_char in CLOSE_QUOTES or next_char in STRAIGHT_QUOTES:
+        return _is_cjk_char(prev_char)
+    if prev_char in CLOSE_QUOTES or prev_char in STRAIGHT_QUOTES:
+        return next_char in ZH_QUOTE_FOLLOWERS
+    return False
+
+
+def _is_high_risk_boundary(display_text: str, char_end: int, language: str) -> bool:
+    group = language_group(language)
     prev_char = _previous_visible_char(display_text, char_end)
     next_char = _next_visible_char(display_text, char_end)
     if not prev_char or not next_char:
         return False
+    if group == "cjk":
+        return _is_zh_quote_boundary_risk(display_text, char_end)
     if _is_clear_boundary(prev_char):
+        return False
+    if group != "ja":
         return False
     if prev_char in OPEN_QUOTES or next_char in CLOSE_QUOTES:
         return True
@@ -527,10 +766,16 @@ def _is_numeral(char: str) -> bool:
     return bool(JA_NUMERAL_RE.fullmatch(char))
 
 
+def _is_cjk_char(char: str) -> bool:
+    return bool(ZH_CJK_RE.fullmatch(char))
+
+
 def _has_bad_line_edge(text: str, language: str) -> bool:
     group = language_group(language)
     if group == "ja":
         return text[-1:] in JA_BAD_EDGE
+    if group == "cjk":
+        return text[-1:] in ZH_BAD_EDGE or text[-1:] in OPEN_QUOTES or text[-1:] in STRAIGHT_QUOTES
     if group == "en":
         words = re.findall(r"[A-Za-z']+", text)
         return bool(words and words[-1].lower() in EN_BAD_EDGE)

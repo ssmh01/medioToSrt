@@ -7,7 +7,15 @@ from pathlib import Path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 from autosrt_aligner.models import AlignmentResult, AlignmentToken, SubtitleCue
-from autosrt_aligner.pipeline import _repair_timeline_if_needed, run_alignment_job
+from autosrt_aligner.pipeline import (
+    TimelineRepairSummary,
+    _apply_timeline_quality,
+    _detect_zh_cue_timeline_ranges,
+    _register_unresolved_zh_timeline_risks,
+    _repair_timeline_if_needed,
+    _repair_zh_cue_risks_with_local_realign,
+    run_alignment_job,
+)
 from autosrt_aligner.profiles import resolve_profile
 from autosrt_aligner.quality import build_quality_report
 from autosrt_aligner.text import validate_subtitle_continuity
@@ -69,6 +77,28 @@ class BrokenTimelineEngine:
         return AlignmentResult(tokens=tokens, raw={"engine": "fake-local"}, audio_duration=visible_index * step)
 
 
+class ZhCueRepairEngine:
+    requires_audio_preprocessing = False
+
+    def __init__(self, repair_succeeds: bool = True) -> None:
+        self.repair_succeeds = repair_succeeds
+        self.realign_calls = 0
+
+    def realign_fragment(self, audio_path, cleaned_text, language, audio_start, audio_end, work_dir, logs, attempt_id):
+        self.realign_calls += 1
+        tokens = []
+        visible_index = 0
+        step = 0.2 if self.repair_succeeds else 3.0
+        confidence = 0.9 if self.repair_succeeds else 0.01
+        for idx, ch in enumerate(cleaned_text.display_text):
+            if ch.isspace():
+                continue
+            start = visible_index * step
+            tokens.append(AlignmentToken(ch, start, start + 0.12, idx, idx + 1, confidence=confidence))
+            visible_index += 1
+        return AlignmentResult(tokens=tokens, raw={"engine": "zh-local"}, audio_duration=visible_index * step, language=language)
+
+
 class PipelineTests(unittest.TestCase):
     def test_run_alignment_job_with_fake_engine_exports_files(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -92,6 +122,9 @@ class PipelineTests(unittest.TestCase):
             self.assertIn("这是第一句话", result.srt_path.read_text(encoding="utf-8"))
             self.assertEqual(result.quality_report["unaligned_text_ratio"], 0.0)
             self.assertEqual(result.quality_report["timeline_status"], "ok")
+            self.assertIn("cue_diagnostics", result.alignment_payload)
+            self.assertIn("before_repair", result.alignment_payload["cue_diagnostics"])
+            self.assertIn("after_repair", result.alignment_payload["cue_diagnostics"])
 
     def test_local_realign_repairs_suspect_timeline(self):
         script = (
@@ -221,6 +254,75 @@ class PipelineTests(unittest.TestCase):
 
         heart_cue = next(cue for cue in repaired if "心の中" in cue.text)
         self.assertLess(heart_cue.start, 8.0)
+
+    def test_chinese_cue_risk_local_realign_repairs_tokens(self):
+        text = (
+            "我只是想,把你,也算进我'信得过的人'里头。"
+            "这次……换你,也留一把妈的钥匙。 她说着,从口袋里,掏出一把崭新的、刚配好的钥匙,放到建平手里。"
+            "这把钥匙,不是为了让建平来\"管\"她,是她主动交出去的。"
+        )
+        first_end = text.index("这次")
+        second_end = text.index("这把钥匙")
+        cues = [
+            SubtitleCue(1, 0.0, 4.0, text[:first_end], 0, first_end),
+            SubtitleCue(2, 4.2, 10.7, text[first_end:second_end], first_end, second_end),
+            SubtitleCue(3, 12.9, 17.8, text[second_end:], second_end, len(text)),
+        ]
+        profile = resolve_profile("youtube_long", "zh", min_duration=1.2, max_duration=6.5, max_chars_per_line=18)
+        ranges = _detect_zh_cue_timeline_ranges(cues, text, 20.0, profile, "zh")
+        self.assertTrue(any("zh_long_cue_gap" in range_.reasons for range_ in ranges))
+
+        mapped_tokens = [
+            AlignmentToken(ch, idx * 0.08, idx * 0.08 + 0.04, idx, idx + 1, confidence=0.8)
+            for idx, ch in enumerate(text)
+            if not ch.isspace()
+        ]
+        summary = TimelineRepairSummary()
+        engine = ZhCueRepairEngine(repair_succeeds=True)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repaired_tokens, changed = _repair_zh_cue_risks_with_local_realign(
+                mapped_tokens,
+                cues,
+                text,
+                engine,
+                Path(temp_dir) / "dummy.wav",
+                Path(temp_dir),
+                "zh",
+                20.0,
+                profile,
+                [],
+                summary,
+            )
+
+        self.assertTrue(changed)
+        self.assertGreater(engine.realign_calls, 0)
+        self.assertGreater(len(summary.repaired_ranges), 0)
+        self.assertEqual(summary.low_confidence_ranges, [])
+        self.assertGreater(len(repaired_tokens), 0)
+
+    def test_unresolved_chinese_cue_risk_marks_needs_review(self):
+        text = (
+            "我只是想,把你,也算进我'信得过的人'里头。"
+            "这次……换你,也留一把妈的钥匙。 她说着,从口袋里,掏出一把崭新的、刚配好的钥匙,放到建平手里。"
+            "这把钥匙,不是为了让建平来\"管\"她,是她主动交出去的。"
+        )
+        first_end = text.index("这次")
+        second_end = text.index("这把钥匙")
+        cues = [
+            SubtitleCue(1, 0.0, 4.0, text[:first_end], 0, first_end),
+            SubtitleCue(2, 4.2, 10.7, text[first_end:second_end], first_end, second_end),
+            SubtitleCue(3, 12.9, 17.8, text[second_end:], second_end, len(text)),
+        ]
+        profile = resolve_profile("youtube_long", "zh", min_duration=1.2, max_duration=6.5, max_chars_per_line=18)
+        ranges = _detect_zh_cue_timeline_ranges(cues, text, 20.0, profile, "zh")
+        summary = TimelineRepairSummary()
+        _register_unresolved_zh_timeline_risks(summary, ranges)
+        report = build_quality_report(cues, text, 20.0, profile, "zh")
+        _apply_timeline_quality(report, summary)
+
+        self.assertEqual(report["timeline_status"], "needs_review")
+        self.assertLessEqual(report["quality_score"], 75)
+        self.assertGreater(len(report["low_confidence_ranges"]), 0)
 
 
 if __name__ == "__main__":

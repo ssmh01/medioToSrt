@@ -47,8 +47,8 @@ def resolve_profile(
         cps = 12.0
     else:
         base_line = 18
-        base_total = 38
-        cps = 13.0
+        base_total = 34
+        cps = 8.5
 
     if profile_key == "short":
         default_min, default_max = 1.0, 4.2

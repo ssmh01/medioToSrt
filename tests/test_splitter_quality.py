@@ -69,6 +69,33 @@ class SplitterQualityTests(unittest.TestCase):
         ]:
             assert_not_split_inside(self, text, cues, phrase)
 
+    def test_chinese_splitter_protects_quotes_and_sound_words(self):
+        text = (
+            '那一瞬间，阿珠攥着电话倒在地上的画面，"啪"地一下盖了过来，'
+            '她忽然明白，这把钥匙不是为了让建平来"管"她，'
+            "而是把他也算进'信得过的人'里头。"
+        )
+        profile = resolve_profile("youtube_long", "zh", min_duration=1.2, max_duration=6.5, max_chars_per_line=18)
+        cues = split_subtitles(text, char_tokens(text, step=0.12), "zh", profile)
+        self.assertTrue(validate_subtitle_continuity(cues, text))
+        for cue in cues:
+            self.assertNotIn("\n", cue.text)
+        for phrase in ['"啪"地一下', '"管"她', "'信得过的人'"]:
+            assert_not_split_inside(self, text, cues, phrase)
+
+    def test_chinese_splitter_splits_overlong_cue_at_safe_boundary(self):
+        text = (
+            "这次……换你,也留一把妈的钥匙。 "
+            "她说着,从口袋里,掏出一把崭新的、刚配好的钥匙,放到建平手里。"
+            "这把钥匙,不是为了让建平来\"管\"她,是她主动交出去的。"
+        )
+        profile = resolve_profile("youtube_long", "zh", min_duration=1.2, max_duration=6.5, max_chars_per_line=18)
+        cues = split_subtitles(text, char_tokens(text, step=0.1), "zh", profile)
+        self.assertTrue(validate_subtitle_continuity(cues, text))
+        self.assertGreater(len(cues), 2)
+        self.assertLessEqual(max(len("".join(cue.text.split())) for cue in cues), 38)
+        assert_not_split_inside(self, text, cues, '"管"她')
+
     def test_timing_smoothing_reduces_large_gap_and_fast_cue(self):
         profile = resolve_profile("youtube_long", "ja", min_duration=1.2, max_duration=6.5, max_chars_per_line=18)
         cues = [
@@ -117,6 +144,19 @@ class SplitterQualityTests(unittest.TestCase):
         ]
         report = build_quality_report(cues, text, 3.2, profile, "ja")
         self.assertEqual(report["weak_boundary_count"], 1)
+
+    def test_quality_report_adds_chinese_risk_metrics(self):
+        text = '那一瞬间，阿珠攥着电话倒在地上的画面，"啪"地一下盖了过来。'
+        split_at = text.index('"啪"') + 1
+        cues = [
+            SubtitleCue(1, 0.0, 2.0, text[:split_at], 0, split_at),
+            SubtitleCue(2, 4.0, 6.2, text[split_at:], split_at, len(text)),
+        ]
+        profile = resolve_profile("youtube_long", "zh", min_duration=1.2, max_duration=6.5, max_chars_per_line=18)
+        report = build_quality_report(cues, text, 6.2, profile, "zh")
+        self.assertGreater(report["zh_unsafe_boundary_count"], 0)
+        self.assertGreater(report["zh_timeline_risk_count"], 0)
+        self.assertIn("存在中文不安全切段", report["warnings"])
 
 
 if __name__ == "__main__":

@@ -13,9 +13,9 @@ from .engines.base import AlignmentEngine
 from .engines.stable_ts import StableTsEngine
 from .formats import export_srt, export_vtt
 from .models import AlignmentToken, JobResult, SubtitleCue
-from .profiles import resolve_profile
+from .profiles import language_group, resolve_profile
 from .quality import build_quality_report
-from .splitter import VISUAL_GAP_TARGET_SECONDS, split_subtitles
+from .splitter import VISUAL_GAP_TARGET_SECONDS, _is_high_risk_boundary, split_subtitles
 from .text import clean_script_text, map_tokens_to_display
 
 
@@ -88,6 +88,28 @@ def run_alignment_job(
         profile,
     )
     cues = split_subtitles(cleaned.display_text, mapped_tokens, language, profile)
+    pre_repair_cue_diagnostics = _cue_timeline_diagnostics(cues, cleaned.display_text, profile, language)
+    mapped_tokens, zh_cue_repaired = _repair_zh_cue_risks_with_local_realign(
+        mapped_tokens,
+        cues,
+        cleaned.display_text,
+        engine,
+        align_audio_path,
+        work_dir,
+        language,
+        audio_duration,
+        profile,
+        logs,
+        timeline_summary,
+    )
+    if zh_cue_repaired:
+        post_repair_token_diagnostics = _token_timeline_diagnostics(
+            mapped_tokens,
+            cleaned.display_text,
+            audio_duration,
+            profile,
+        )
+        cues = split_subtitles(cleaned.display_text, mapped_tokens, language, profile)
     cues, timeline_repair = _repair_timeline_if_needed(
         cues,
         cleaned.display_text,
@@ -100,6 +122,11 @@ def run_alignment_job(
     quality_report = build_quality_report(cues, cleaned.display_text, audio_duration, profile, language)
     if timeline_repair is not None:
         timeline_summary.register_fallback(timeline_repair)
+    post_repair_cue_diagnostics = _cue_timeline_diagnostics(cues, cleaned.display_text, profile, language)
+    _register_unresolved_zh_timeline_risks(
+        timeline_summary,
+        _detect_zh_cue_timeline_ranges(cues, cleaned.display_text, audio_duration, profile, language),
+    )
     _apply_timeline_quality(quality_report, timeline_summary)
     if timeline_repair is not None:
         quality_report["timeline_repaired"] = True
@@ -127,6 +154,10 @@ def run_alignment_job(
         token_diagnostics={
             "before_repair": pre_repair_token_diagnostics,
             "after_repair": post_repair_token_diagnostics,
+        },
+        cue_diagnostics={
+            "before_repair": pre_repair_cue_diagnostics,
+            "after_repair": post_repair_cue_diagnostics,
         },
     )
     alignment_json_path = out_dir / "alignment.json"
@@ -300,6 +331,202 @@ def _repair_tokens_with_local_realign(
 
     repaired_tokens.sort(key=lambda token: ((token.start_char or 0), token.start, token.end))
     return repaired_tokens, summary
+
+
+def _repair_zh_cue_risks_with_local_realign(
+    mapped_tokens: list[AlignmentToken],
+    cues: list[SubtitleCue],
+    display_text: str,
+    engine: AlignmentEngine,
+    align_audio_path: Path,
+    work_dir: Path,
+    language: str,
+    audio_duration: float | None,
+    profile: Any,
+    logs: list[str],
+    summary: TimelineRepairSummary,
+) -> tuple[list[AlignmentToken], bool]:
+    suspect_ranges = _detect_zh_cue_timeline_ranges(cues, display_text, audio_duration, profile, language)
+    if not suspect_ranges:
+        return mapped_tokens, False
+
+    known_ranges = {(item.get("start_char"), item.get("end_char"), tuple(item.get("reasons", []))) for item in summary.suspect_ranges}
+    for range_ in suspect_ranges:
+        key = (range_.start_char, range_.end_char, tuple(range_.reasons))
+        if key not in known_ranges:
+            summary.suspect_ranges.append(range_.to_payload())
+            known_ranges.add(key)
+    logs.append(f"检测到 {len(suspect_ranges)} 个中文 cue 级时间轴风险，开始局部重对齐")
+
+    local_realign = getattr(engine, "realign_fragment", None)
+    if not callable(local_realign):
+        for range_ in suspect_ranges:
+            _append_low_confidence_range(summary, range_, "zh_local_realign_unavailable")
+        return mapped_tokens, False
+
+    repaired_tokens = list(mapped_tokens)
+    changed = False
+    for range_ in suspect_ranges[:4]:
+        result = _try_local_realign_range(
+            local_realign,
+            align_audio_path,
+            display_text,
+            range_,
+            work_dir,
+            language,
+            profile,
+            logs,
+            summary,
+        )
+        if result:
+            repaired_tokens = _replace_tokens_in_char_range(
+                repaired_tokens,
+                range_.start_char,
+                range_.end_char,
+                result,
+            )
+            summary.repaired_ranges.append(
+                {
+                    **range_.to_payload(),
+                    "mode": "zh_cue_local_realign",
+                    "confidence": "high",
+                    "token_count": len(result),
+                }
+            )
+            changed = True
+        else:
+            _append_low_confidence_range(summary, range_, "zh_cue_local_realign_failed")
+
+    repaired_tokens.sort(key=lambda token: ((token.start_char or 0), token.start, token.end))
+    return repaired_tokens, changed
+
+
+def _detect_zh_cue_timeline_ranges(
+    cues: list[SubtitleCue],
+    display_text: str,
+    audio_duration: float | None,
+    profile: Any,
+    language: str,
+) -> list[TimelineRange]:
+    if language_group(language) != "cjk" or len(cues) < 2:
+        return []
+
+    raw_ranges: list[tuple[int, int, list[str], str]] = []
+    for index, cue in enumerate(cues):
+        next_cue = cues[index + 1] if index + 1 < len(cues) else None
+        gap = (next_cue.start - cue.end) if next_cue else 0.0
+        chars = _visible_len(cue.text)
+        cps = chars / max(cue.duration, 0.1)
+        near_max = cue.duration >= profile.max_duration - 0.05
+        reasons: list[str] = []
+        severity = "medium"
+
+        if next_cue and gap > 1.5:
+            reasons.append("zh_severe_gap")
+            severity = "high"
+        if next_cue and gap > 0.8 and (near_max or chars > 34):
+            reasons.append("zh_long_cue_gap")
+            severity = "high"
+        if cps > 9.5 or (cps > 8.5 and chars > 18):
+            reasons.append("zh_fast_cue")
+            if cps > 9.5:
+                severity = "high"
+        if next_cue and _is_high_risk_boundary(display_text, cue.end_char, language):
+            reasons.append("zh_quote_boundary")
+        if _is_zh_maxed_duration_cluster(cues, index, profile):
+            reasons.append("zh_maxed_duration_cluster")
+
+        if not reasons:
+            continue
+        start_index = max(0, index - 1)
+        end_index = min(len(cues) - 1, index + 1)
+        raw_ranges.append((start_index, end_index, sorted(set(reasons)), severity))
+
+    merged = _merge_zh_cue_ranges(cues, raw_ranges, audio_duration)
+    for index, range_ in enumerate(merged, start=1):
+        range_.index = index
+    return merged[:4]
+
+
+def _is_zh_maxed_duration_cluster(cues: list[SubtitleCue], index: int, profile: Any) -> bool:
+    if index + 2 >= len(cues):
+        return False
+    window = cues[index : index + 3]
+    maxed = [cue for cue in window if cue.duration >= profile.max_duration - 0.05]
+    if len(maxed) < 3:
+        return False
+    avg_chars = sum(_visible_len(cue.text) for cue in window) / 3
+    return avg_chars > 30
+
+
+def _merge_zh_cue_ranges(
+    cues: list[SubtitleCue],
+    raw_ranges: list[tuple[int, int, list[str], str]],
+    audio_duration: float | None,
+) -> list[TimelineRange]:
+    if not raw_ranges:
+        return []
+    ordered = sorted(raw_ranges, key=lambda item: item[0])
+    merged: list[tuple[int, int, set[str], str]] = []
+    for start_index, end_index, reasons, severity in ordered:
+        if not merged or start_index > merged[-1][1] + 1:
+            merged.append((start_index, end_index, set(reasons), severity))
+            continue
+        prev_start, prev_end, prev_reasons, prev_severity = merged[-1]
+        merged[-1] = (
+            prev_start,
+            max(prev_end, end_index),
+            prev_reasons | set(reasons),
+            "high" if "high" in {prev_severity, severity} else "medium",
+        )
+
+    ranges: list[TimelineRange] = []
+    max_audio = audio_duration or max((cue.end for cue in cues), default=0.0)
+    for start_index, end_index, reasons, severity in merged:
+        start_cue = cues[start_index]
+        end_cue = cues[end_index]
+        ranges.append(
+            TimelineRange(
+                start_char=start_cue.start_char,
+                end_char=end_cue.end_char,
+                audio_start=max(0.0, start_cue.start),
+                audio_end=min(max_audio, max(end_cue.end, start_cue.start + 0.5)),
+                reasons=sorted(reasons),
+                severity=severity,
+            )
+        )
+    return ranges
+
+
+def _append_low_confidence_range(summary: TimelineRepairSummary, range_: TimelineRange, mode: str) -> None:
+    payload = {
+        **range_.to_payload(),
+        "mode": mode,
+        "confidence": "low",
+    }
+    existing = {
+        (item.get("start_char"), item.get("end_char"), item.get("mode"))
+        for item in summary.low_confidence_ranges
+    }
+    key = (payload.get("start_char"), payload.get("end_char"), payload.get("mode"))
+    if key not in existing:
+        summary.low_confidence_ranges.append(payload)
+
+
+def _register_unresolved_zh_timeline_risks(
+    summary: TimelineRepairSummary,
+    suspect_ranges: list[TimelineRange],
+) -> None:
+    repaired = {
+        (item.get("start_char"), item.get("end_char"))
+        for item in summary.repaired_ranges
+        if item.get("confidence") == "high"
+    }
+    for range_ in suspect_ranges:
+        if (range_.start_char, range_.end_char) in repaired:
+            continue
+        if range_.severity == "high":
+            _append_low_confidence_range(summary, range_, "zh_unresolved_cue_risk")
 
 
 def _try_local_realign_range(
@@ -788,6 +1015,28 @@ def _token_timeline_diagnostics(
         "cps_spike_count": cps_spike_count,
         "max_token_gap_seconds": round(max_token_gap, 3),
         "end_collapse_visible_chars": end_collapse_visible_chars,
+    }
+
+
+def _cue_timeline_diagnostics(
+    cues: list[SubtitleCue],
+    display_text: str,
+    profile: Any,
+    language: str,
+) -> dict[str, Any]:
+    gaps = [cur.start - prev.end for prev, cur in zip(cues, cues[1:])]
+    cps_values = [_visible_len(cue.text) / max(cue.duration, 0.1) for cue in cues]
+    lengths = [_visible_len(cue.text) for cue in cues]
+    zh_ranges = _detect_zh_cue_timeline_ranges(cues, display_text, None, profile, language)
+    return {
+        "cue_count": len(cues),
+        "max_gap_seconds": round(max(gaps, default=0.0), 3),
+        "large_gap_count": sum(1 for gap in gaps if gap > 0.8),
+        "max_chars_per_second": round(max(cps_values, default=0.0), 3),
+        "max_chars_per_cue": max(lengths, default=0),
+        "overlap_count": sum(1 for prev, cur in zip(cues, cues[1:]) if cur.start < prev.end),
+        "zh_timeline_risk_count": len(zh_ranges),
+        "zh_timeline_risks": [range_.to_payload() for range_ in zh_ranges],
     }
 
 
@@ -1284,6 +1533,7 @@ def _build_alignment_payload(
     audio_duration: float | None,
     timeline_summary: dict[str, Any] | None = None,
     token_diagnostics: dict[str, Any] | None = None,
+    cue_diagnostics: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         "language": language,
@@ -1293,6 +1543,7 @@ def _build_alignment_payload(
         "align_text_length": len(cleaned_align),
         "timeline_diagnostics": timeline_summary or {},
         "token_diagnostics": token_diagnostics or {},
+        "cue_diagnostics": cue_diagnostics or {},
         "engine_result": alignment_raw,
         "tokens": [
             {

@@ -5,8 +5,13 @@ from statistics import mean
 from typing import Any
 
 from .models import SubtitleCue, SubtitleProfile
+from .profiles import language_group
 from .splitter import _is_high_risk_boundary
 from .text import unaligned_text_ratio
+
+ZH_LONG_CUE_CHARS = 34
+ZH_FAST_CPS = 8.5
+ZH_SEVERE_FAST_CPS = 9.5
 
 
 def build_quality_report(
@@ -27,6 +32,7 @@ def build_quality_report(
     empty_count = sum(1 for cue in cues if not cue.text.strip())
     large_gap_count = sum(1 for gap in gaps if gap > 0.8)
     weak_boundary_count = _weak_boundary_count(cues, display_text, language)
+    zh_metrics = _zh_quality_metrics(cues, display_text, profile, language)
     ratio = unaligned_text_ratio(cues, display_text)
 
     warnings: list[str] = []
@@ -44,6 +50,10 @@ def build_quality_report(
         warnings.append("存在单条字幕过长")
     if large_gap_count:
         warnings.append("存在疑似异常长间隔")
+    if zh_metrics["zh_unsafe_boundary_count"]:
+        warnings.append("存在中文不安全切段")
+    if zh_metrics["zh_timeline_risk_count"]:
+        warnings.append("存在中文时间轴风险")
 
     score = 100
     score -= overlap_count * 18
@@ -55,6 +65,10 @@ def build_quality_report(
     score -= sum(1 for length in cue_lengths if length > profile.max_chars_total) * 3
     score -= large_gap_count * 4
     score -= weak_boundary_count * 2
+    score -= zh_metrics["zh_fast_cue_count"] * 4
+    score -= zh_metrics["zh_large_gap_after_long_cue_count"] * 6
+    score -= zh_metrics["zh_unsafe_boundary_count"] * 5
+    score -= zh_metrics["zh_timeline_risk_count"] * 6
     score = max(0, min(100, score))
 
     return {
@@ -76,6 +90,7 @@ def build_quality_report(
         "empty_subtitle_count": empty_count,
         "unaligned_text_ratio": _rounded(ratio),
         "suspicious_gap_count": large_gap_count,
+        **zh_metrics,
         "quality_score": score,
         "warnings": warnings,
     }
@@ -107,8 +122,62 @@ def _has_natural_boundary(text: str) -> bool:
 def _weak_boundary_count(cues: list[SubtitleCue], display_text: str, language: str) -> int:
     if _uses_japanese_boundary_rules(display_text, language):
         return sum(1 for cue in cues[:-1] if _is_high_risk_boundary(display_text, cue.end_char, "ja"))
+    if language_group(language) == "cjk":
+        unsafe = sum(1 for cue in cues[:-1] if _is_high_risk_boundary(display_text, cue.end_char, language))
+        unnatural_tail = sum(1 for cue in cues if not _has_natural_boundary(cue.text))
+        return unsafe + unnatural_tail
     return sum(1 for cue in cues if not _has_natural_boundary(cue.text))
 
 
 def _uses_japanese_boundary_rules(display_text: str, language: str) -> bool:
     return language == "ja"
+
+
+def _zh_quality_metrics(
+    cues: list[SubtitleCue],
+    display_text: str,
+    profile: SubtitleProfile,
+    language: str,
+) -> dict[str, int]:
+    if language_group(language) != "cjk":
+        return {
+            "zh_long_cue_count": 0,
+            "zh_fast_cue_count": 0,
+            "zh_unsafe_boundary_count": 0,
+            "zh_large_gap_after_long_cue_count": 0,
+            "zh_timeline_risk_count": 0,
+        }
+
+    long_count = 0
+    fast_count = 0
+    unsafe_count = 0
+    large_gap_after_long_count = 0
+    timeline_risk_count = 0
+    for index, cue in enumerate(cues):
+        chars = _chars(cue.text)
+        cps = chars / max(cue.duration, 0.1)
+        if chars > ZH_LONG_CUE_CHARS:
+            long_count += 1
+        if cps > ZH_FAST_CPS:
+            fast_count += 1
+        if index < len(cues) - 1 and _is_high_risk_boundary(display_text, cue.end_char, language):
+            unsafe_count += 1
+            timeline_risk_count += 1
+        if index < len(cues) - 1:
+            gap = cues[index + 1].start - cue.end
+            long_or_maxed = chars > ZH_LONG_CUE_CHARS or cue.duration >= profile.max_duration - 0.05
+            if gap > 0.8 and long_or_maxed:
+                large_gap_after_long_count += 1
+                timeline_risk_count += 1
+            elif gap > 1.5:
+                timeline_risk_count += 1
+        if cps > ZH_SEVERE_FAST_CPS:
+            timeline_risk_count += 1
+
+    return {
+        "zh_long_cue_count": long_count,
+        "zh_fast_cue_count": fast_count,
+        "zh_unsafe_boundary_count": unsafe_count,
+        "zh_large_gap_after_long_cue_count": large_gap_after_long_count,
+        "zh_timeline_risk_count": timeline_risk_count,
+    }
