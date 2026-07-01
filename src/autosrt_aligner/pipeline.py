@@ -6,6 +6,7 @@ import json
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
+from statistics import median
 from typing import Any
 
 from .audio import preprocess_audio
@@ -17,6 +18,30 @@ from .profiles import language_group, resolve_profile
 from .quality import build_quality_report
 from .splitter import VISUAL_GAP_TARGET_SECONDS, _is_high_risk_boundary, split_subtitles
 from .text import clean_script_text, map_tokens_to_display
+
+CHECKPOINT_MIN_VISIBLE_CHARS = 240
+CHECKPOINT_SMALL_TEXT_VISIBLE_CHARS = 1800
+CHECKPOINT_LONG_TEXT_STRIDE = 850
+CHECKPOINT_MAX_COUNT = 18
+CHECKPOINT_TARGET_MIN_CHARS = 70
+CHECKPOINT_TARGET_MAX_CHARS = 180
+CHECKPOINT_MEDIUM_MEDIAN_DRIFT = 0.75
+CHECKPOINT_MEDIUM_P95_DRIFT = 1.25
+CHECKPOINT_HIGH_MEDIAN_DRIFT = 1.0
+CHECKPOINT_HIGH_P95_DRIFT = 1.5
+CHECKPOINT_MEDIUM_SUPPORTING_MEDIAN_DRIFT = 0.25
+CHECKPOINT_HIGH_SUPPORTING_MEDIAN_DRIFT = 0.35
+CHECKPOINT_REPAIR_MAX_RANGES = 6
+MICRO_DRIFT_MAX_RANGES = 16
+MICRO_DRIFT_SAMPLE_THRESHOLD = 0.65
+MICRO_DRIFT_MEDIAN_THRESHOLD = 0.75
+MICRO_DRIFT_P75_THRESHOLD = 1.05
+MICRO_DRIFT_HIGH_MEDIAN_THRESHOLD = 1.0
+MICRO_DRIFT_HIGH_P75_THRESHOLD = 1.5
+MICRO_DRIFT_MIN_SAMPLES = 6
+MICRO_DRIFT_MIN_VISIBLE_CHARS = 12
+MICRO_DRIFT_REPAIRED_TARGET_SECONDS = 0.6
+MICRO_DRIFT_MIN_IMPROVEMENT_RATIO = 0.55
 
 
 def run_alignment_job(
@@ -87,6 +112,25 @@ def run_alignment_job(
         audio_duration,
         profile,
     )
+    mapped_tokens, checkpoint_repaired = _repair_checkpoint_drifts_with_local_realign(
+        mapped_tokens,
+        cleaned.display_text,
+        engine,
+        align_audio_path,
+        work_dir,
+        language,
+        audio_duration,
+        profile,
+        logs,
+        timeline_summary,
+    )
+    if checkpoint_repaired:
+        post_repair_token_diagnostics = _token_timeline_diagnostics(
+            mapped_tokens,
+            cleaned.display_text,
+            audio_duration,
+            profile,
+        )
     cues = split_subtitles(cleaned.display_text, mapped_tokens, language, profile)
     pre_repair_cue_diagnostics = _cue_timeline_diagnostics(cues, cleaned.display_text, profile, language)
     mapped_tokens, zh_cue_repaired = _repair_zh_cue_risks_with_local_realign(
@@ -103,6 +147,27 @@ def run_alignment_job(
         timeline_summary,
     )
     if zh_cue_repaired:
+        post_repair_token_diagnostics = _token_timeline_diagnostics(
+            mapped_tokens,
+            cleaned.display_text,
+            audio_duration,
+            profile,
+        )
+        cues = split_subtitles(cleaned.display_text, mapped_tokens, language, profile)
+    mapped_tokens, micro_drift_repaired = _repair_micro_drifts_with_local_realign(
+        mapped_tokens,
+        cues,
+        cleaned.display_text,
+        engine,
+        align_audio_path,
+        work_dir,
+        language,
+        audio_duration,
+        profile,
+        logs,
+        timeline_summary,
+    )
+    if micro_drift_repaired:
         post_repair_token_diagnostics = _token_timeline_diagnostics(
             mapped_tokens,
             cleaned.display_text,
@@ -214,12 +279,128 @@ class TimelineRange:
 
 
 @dataclass
+class DriftCheckpoint:
+    index: int
+    start_char: int
+    end_char: int
+    audio_start: float
+    audio_end: float
+    sample_count: int
+    median_drift: float
+    p95_drift: float
+    max_drift: float
+    signed_median_drift: float
+    severity: str
+    local_tokens: list[AlignmentToken] = field(repr=False)
+
+    @property
+    def direction(self) -> int:
+        return 1 if self.signed_median_drift >= 0 else -1
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "index": self.index,
+            "start_char": self.start_char,
+            "end_char": self.end_char,
+            "audio_start": round(self.audio_start, 3),
+            "audio_end": round(self.audio_end, 3),
+            "sample_count": self.sample_count,
+            "median_drift": round(self.median_drift, 3),
+            "p95_drift": round(self.p95_drift, 3),
+            "max_drift": round(self.max_drift, 3),
+            "signed_median_drift": round(self.signed_median_drift, 3),
+            "severity": self.severity,
+        }
+
+
+@dataclass
+class DriftRange:
+    timeline_range: TimelineRange
+    checkpoint_count: int
+    median_drift: float
+    p95_drift: float
+    max_drift: float
+    signed_median_drift: float
+    direction: int
+
+    @property
+    def severity(self) -> str:
+        return self.timeline_range.severity
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            **self.timeline_range.to_payload(),
+            "checkpoint_count": self.checkpoint_count,
+            "median_drift": round(self.median_drift, 3),
+            "p95_drift": round(self.p95_drift, 3),
+            "max_drift": round(self.max_drift, 3),
+            "signed_median_drift": round(self.signed_median_drift, 3),
+        }
+
+
+@dataclass
+class MicroDriftCandidate:
+    timeline_range: TimelineRange
+    cue_start_index: int
+    cue_end_index: int
+    reasons: list[str]
+    score: float
+
+
+@dataclass
+class MicroDriftRange:
+    timeline_range: TimelineRange
+    cue_start_index: int
+    cue_end_index: int
+    sample_count: int
+    visible_chars: int
+    median_drift: float
+    p75_drift: float
+    max_drift: float
+    signed_median_drift: float
+    source: str
+
+    @property
+    def severity(self) -> str:
+        return self.timeline_range.severity
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            **self.timeline_range.to_payload(),
+            "cue_start_index": self.cue_start_index + 1,
+            "cue_end_index": self.cue_end_index + 1,
+            "sample_count": self.sample_count,
+            "visible_chars": self.visible_chars,
+            "median_drift": round(self.median_drift, 3),
+            "p75_drift": round(self.p75_drift, 3),
+            "max_drift": round(self.max_drift, 3),
+            "signed_median_drift": round(self.signed_median_drift, 3),
+            "source": self.source,
+        }
+
+
+@dataclass
 class TimelineRepairSummary:
     suspect_ranges: list[dict[str, Any]] = field(default_factory=list)
     repaired_ranges: list[dict[str, Any]] = field(default_factory=list)
     low_confidence_ranges: list[dict[str, Any]] = field(default_factory=list)
     local_realign_attempts: list[dict[str, Any]] = field(default_factory=list)
     max_anchor_gap_seconds: float = 0.0
+    verified_checkpoint_count: int = 0
+    checkpoint_drift_count: int = 0
+    max_checkpoint_drift_seconds: float = 0.0
+    p95_checkpoint_drift_seconds: float = 0.0
+    drift_suspect_ranges: list[dict[str, Any]] = field(default_factory=list)
+    drift_repaired_ranges: list[dict[str, Any]] = field(default_factory=list)
+    unresolved_drift_ranges: list[dict[str, Any]] = field(default_factory=list)
+    micro_drift_candidate_count: int = 0
+    micro_drift_run_count: int = 0
+    micro_drift_repaired_count: int = 0
+    micro_drift_unresolved_count: int = 0
+    max_micro_drift_seconds: float = 0.0
+    micro_drift_ranges: list[dict[str, Any]] = field(default_factory=list)
+    micro_drift_repaired_ranges: list[dict[str, Any]] = field(default_factory=list)
+    micro_drift_unresolved_ranges: list[dict[str, Any]] = field(default_factory=list)
 
     def register_fallback(self, repair_info: dict[str, Any]) -> None:
         payload = dict(repair_info)
@@ -229,19 +410,19 @@ class TimelineRepairSummary:
 
     @property
     def status(self) -> str:
-        if self.low_confidence_ranges:
+        if self.low_confidence_ranges or self.unresolved_drift_ranges or self.micro_drift_unresolved_ranges:
             return "needs_review"
-        if self.repaired_ranges:
+        if self.repaired_ranges or self.drift_repaired_ranges or self.micro_drift_repaired_ranges:
             return "repaired"
         return "ok"
 
     @property
     def confidence_score(self) -> int:
-        if self.low_confidence_ranges:
+        if self.low_confidence_ranges or self.unresolved_drift_ranges or self.micro_drift_unresolved_ranges:
             return 60
-        if self.repaired_ranges:
+        if self.repaired_ranges or self.drift_repaired_ranges or self.micro_drift_repaired_ranges:
             return 92
-        if self.suspect_ranges:
+        if self.suspect_ranges or self.drift_suspect_ranges or self.micro_drift_ranges:
             return 88
         return 100
 
@@ -254,6 +435,21 @@ class TimelineRepairSummary:
             "low_confidence_ranges": self.low_confidence_ranges,
             "local_realign_attempts": self.local_realign_attempts,
             "max_anchor_gap_seconds": round(self.max_anchor_gap_seconds, 3),
+            "checkpoint_drift_count": self.checkpoint_drift_count,
+            "max_checkpoint_drift_seconds": round(self.max_checkpoint_drift_seconds, 3),
+            "p95_checkpoint_drift_seconds": round(self.p95_checkpoint_drift_seconds, 3),
+            "verified_checkpoint_count": self.verified_checkpoint_count,
+            "drift_suspect_ranges": self.drift_suspect_ranges,
+            "drift_repaired_ranges": self.drift_repaired_ranges,
+            "unresolved_drift_ranges": self.unresolved_drift_ranges,
+            "micro_drift_candidate_count": self.micro_drift_candidate_count,
+            "micro_drift_run_count": self.micro_drift_run_count,
+            "micro_drift_repaired_count": self.micro_drift_repaired_count,
+            "micro_drift_unresolved_count": self.micro_drift_unresolved_count,
+            "max_micro_drift_seconds": round(self.max_micro_drift_seconds, 3),
+            "micro_drift_ranges": self.micro_drift_ranges,
+            "micro_drift_repaired_ranges": self.micro_drift_repaired_ranges,
+            "micro_drift_unresolved_ranges": self.micro_drift_unresolved_ranges,
         }
 
 
@@ -401,6 +597,1022 @@ def _repair_zh_cue_risks_with_local_realign(
     return repaired_tokens, changed
 
 
+def _repair_checkpoint_drifts_with_local_realign(
+    mapped_tokens: list[AlignmentToken],
+    display_text: str,
+    engine: AlignmentEngine,
+    align_audio_path: Path,
+    work_dir: Path,
+    language: str,
+    audio_duration: float | None,
+    profile: Any,
+    logs: list[str],
+    summary: TimelineRepairSummary,
+) -> tuple[list[AlignmentToken], bool]:
+    if not _uses_zh_checkpoint_detection(language) or not audio_duration or audio_duration <= 0:
+        return mapped_tokens, False
+
+    if _visible_len(display_text) < CHECKPOINT_MIN_VISIBLE_CHARS:
+        return mapped_tokens, False
+
+    local_realign = getattr(engine, "realign_fragment", None)
+    if not callable(local_realign):
+        return mapped_tokens, False
+
+    checkpoint_ranges = _build_checkpoint_ranges(display_text, mapped_tokens, audio_duration)
+    if not checkpoint_ranges:
+        return mapped_tokens, False
+
+    checkpoints = _verify_checkpoint_ranges(
+        local_realign,
+        align_audio_path,
+        display_text,
+        mapped_tokens,
+        checkpoint_ranges,
+        work_dir,
+        language,
+        profile,
+        logs,
+        summary,
+    )
+    if not checkpoints:
+        return mapped_tokens, False
+
+    _update_checkpoint_drift_stats(summary, checkpoints)
+    drift_ranges = _drift_ranges_from_checkpoints(display_text, mapped_tokens, checkpoints, audio_duration)
+    if not drift_ranges:
+        return mapped_tokens, False
+
+    _register_drift_suspects(summary, drift_ranges)
+    logs.append(f"检测到 {len(drift_ranges)} 个局部时间轴漂移段，开始强制局部重对齐")
+
+    repaired_tokens = list(mapped_tokens)
+    changed = False
+    for drift_range in _prioritize_drift_ranges(drift_ranges)[:CHECKPOINT_REPAIR_MAX_RANGES]:
+        result = _try_local_realign_range(
+            local_realign,
+            align_audio_path,
+            display_text,
+            drift_range.timeline_range,
+            work_dir,
+            language,
+            profile,
+            logs,
+            summary,
+            paddings=(10.0, 18.0),
+        )
+        if result:
+            repaired_tokens = _replace_tokens_in_char_range(
+                repaired_tokens,
+                drift_range.timeline_range.start_char,
+                drift_range.timeline_range.end_char,
+                result,
+            )
+            payload = {
+                **drift_range.to_payload(),
+                "mode": "checkpoint_drift_local_realign",
+                "confidence": "high",
+                "token_count": len(result),
+            }
+            summary.drift_repaired_ranges.append(payload)
+            summary.repaired_ranges.append(payload)
+            changed = True
+            continue
+
+        if drift_range.severity == "high":
+            _append_unresolved_drift_range(summary, drift_range, "checkpoint_drift_local_realign_failed")
+            _append_low_confidence_range(
+                summary,
+                drift_range.timeline_range,
+                "checkpoint_drift_local_realign_failed",
+            )
+
+    if not changed:
+        return mapped_tokens, False
+
+    repaired_tokens.sort(key=lambda token: ((token.start_char or 0), token.start, token.end))
+    post_checkpoints = [
+        _recompute_checkpoint_against_tokens(checkpoint, repaired_tokens, profile)
+        for checkpoint in checkpoints
+    ]
+    _update_checkpoint_drift_stats(summary, post_checkpoints)
+    for drift_range in _drift_ranges_from_checkpoints(display_text, repaired_tokens, post_checkpoints, audio_duration):
+        if drift_range.severity == "high":
+            drift_range.timeline_range.reasons = sorted(
+                set(drift_range.timeline_range.reasons) | {"post_repair_drift"}
+            )
+            _append_unresolved_drift_range(summary, drift_range, "post_repair_drift")
+            _append_low_confidence_range(summary, drift_range.timeline_range, "post_repair_drift")
+
+    return repaired_tokens, True
+
+
+def _repair_micro_drifts_with_local_realign(
+    mapped_tokens: list[AlignmentToken],
+    cues: list[SubtitleCue],
+    display_text: str,
+    engine: AlignmentEngine,
+    align_audio_path: Path,
+    work_dir: Path,
+    language: str,
+    audio_duration: float | None,
+    profile: Any,
+    logs: list[str],
+    summary: TimelineRepairSummary,
+) -> tuple[list[AlignmentToken], bool]:
+    if not _uses_zh_checkpoint_detection(language) or not audio_duration or audio_duration <= 0:
+        return mapped_tokens, False
+
+    local_realign = getattr(engine, "realign_fragment", None)
+    if not callable(local_realign):
+        return mapped_tokens, False
+
+    candidates = _detect_micro_drift_candidates(cues, display_text, audio_duration, profile, language)
+    summary.micro_drift_candidate_count = len(candidates)
+    if not candidates:
+        return mapped_tokens, False
+
+    logs.append(f"检测到 {len(candidates)} 个 micro drift 候选短段，开始句级复核")
+    repaired_tokens = list(mapped_tokens)
+    changed = False
+    unresolved: list[MicroDriftRange] = []
+
+    for index, candidate in enumerate(candidates[:MICRO_DRIFT_MAX_RANGES], start=1):
+        candidate.timeline_range.index = index
+        local_tokens = _try_local_realign_range(
+            local_realign,
+            align_audio_path,
+            display_text,
+            candidate.timeline_range,
+            work_dir,
+            language,
+            profile,
+            logs,
+            summary,
+            paddings=(8.0, 14.0),
+        )
+        if not local_tokens:
+            continue
+
+        micro_range = _micro_drift_range_from_local_tokens(
+            candidate,
+            local_tokens,
+            repaired_tokens,
+            display_text,
+            audio_duration,
+            profile,
+        )
+        if not micro_range:
+            continue
+
+        _register_micro_drift_range(summary, micro_range)
+        replacement = _tokens_in_char_range(
+            local_tokens,
+            micro_range.timeline_range.start_char,
+            micro_range.timeline_range.end_char,
+        )
+        validation_error = _validate_micro_replacement_tokens(
+            replacement,
+            display_text,
+            micro_range.timeline_range.start_char,
+            micro_range.timeline_range.end_char,
+            profile,
+        )
+        compatibility_error = _validate_replacement_timeline_compatible(
+            repaired_tokens,
+            replacement,
+            micro_range.timeline_range.start_char,
+            micro_range.timeline_range.end_char,
+        )
+        if (
+            validation_error is not None
+            or compatibility_error is not None
+            or not _micro_repair_improves(micro_range.median_drift, 0.0)
+        ):
+            if micro_range.severity == "high":
+                unresolved.append(micro_range)
+                _append_unresolved_micro_drift_range(
+                    summary,
+                    micro_range,
+                    validation_error or compatibility_error or "micro_drift_no_significant_improvement",
+                )
+            continue
+
+        repaired_tokens = _replace_tokens_in_char_range(
+            repaired_tokens,
+            micro_range.timeline_range.start_char,
+            micro_range.timeline_range.end_char,
+            replacement,
+        )
+        payload = {
+            **micro_range.to_payload(),
+            "mode": "micro_drift_local_realign",
+            "confidence": "high",
+            "token_count": len(replacement),
+        }
+        summary.micro_drift_repaired_ranges.append(payload)
+        summary.micro_drift_repaired_count = len(summary.micro_drift_repaired_ranges)
+        summary.repaired_ranges.append(payload)
+        changed = True
+
+    if unresolved:
+        for micro_range in unresolved:
+            _append_low_confidence_range(summary, micro_range.timeline_range, "micro_drift_unresolved")
+
+    if not changed:
+        return mapped_tokens, False
+
+    repaired_tokens.sort(key=lambda token: ((token.start_char or 0), token.start, token.end))
+    return repaired_tokens, True
+
+
+def _detect_micro_drift_candidates(
+    cues: list[SubtitleCue],
+    display_text: str,
+    audio_duration: float | None,
+    profile: Any,
+    language: str,
+) -> list[MicroDriftCandidate]:
+    if language not in {"zh", "zh-TW"} or len(cues) < 2:
+        return []
+
+    raw: list[MicroDriftCandidate] = []
+    max_audio = audio_duration or max((cue.end for cue in cues), default=0.0)
+    for index, cue in enumerate(cues):
+        reasons, severity, score = _micro_candidate_reasons(cues, index, profile)
+        if not reasons:
+            continue
+        start_index, end_index = _micro_candidate_cue_window(cues, index, profile)
+        start_char = cues[start_index].start_char
+        end_char = cues[end_index].end_char
+        expanded_start = _previous_sentence_boundary(display_text, start_char, 90)
+        expanded_end = _next_sentence_boundary(display_text, end_char, 120)
+        expanded_start, expanded_end = _trim_char_range(display_text, expanded_start, expanded_end)
+        if expanded_end <= expanded_start:
+            continue
+        raw.append(
+            MicroDriftCandidate(
+                timeline_range=TimelineRange(
+                    start_char=expanded_start,
+                    end_char=expanded_end,
+                    audio_start=max(0.0, cues[start_index].start),
+                    audio_end=min(max_audio, max(cues[end_index].end, cues[start_index].start + 0.5)),
+                    reasons=sorted(set(reasons) | {"micro_drift_probe"}),
+                    severity=severity,
+                ),
+                cue_start_index=start_index,
+                cue_end_index=end_index,
+                reasons=sorted(set(reasons)),
+                score=score,
+            )
+        )
+
+    merged = _merge_micro_drift_candidates(raw)
+    return sorted(
+        merged,
+        key=lambda item: (
+            0 if item.timeline_range.severity == "high" else 1,
+            -item.score,
+            item.timeline_range.start_char,
+        ),
+    )[:MICRO_DRIFT_MAX_RANGES]
+
+
+def _micro_candidate_reasons(
+    cues: list[SubtitleCue],
+    index: int,
+    profile: Any,
+) -> tuple[list[str], str, float]:
+    cue = cues[index]
+    prev_cue = cues[index - 1] if index else None
+    next_cue = cues[index + 1] if index + 1 < len(cues) else None
+    chars = _visible_len(cue.text)
+    cps = chars / max(cue.duration, 0.1)
+    near_max = cue.duration >= profile.max_duration - 0.05
+    prev_near_max = bool(prev_cue and prev_cue.duration >= profile.max_duration - 0.05)
+    next_near_max = bool(next_cue and next_cue.duration >= profile.max_duration - 0.05)
+    next_gap = next_cue.start - cue.end if next_cue else 0.0
+    prev_gap = cue.start - prev_cue.end if prev_cue else 0.0
+
+    reasons: list[str] = []
+    score = 0.0
+    severity = "medium"
+    sparse_threshold = max(18, int(profile.max_chars_total * 0.65))
+    short_duration = max(profile.min_duration + 1.4, min(3.4, profile.max_duration * 0.55))
+
+    if near_max and chars <= sparse_threshold:
+        reasons.append("micro_sparse_maxed_cue")
+        score += 4.0 + (sparse_threshold - chars) / max(1, sparse_threshold)
+        severity = "high"
+    if near_max and (prev_near_max or next_near_max):
+        reasons.append("micro_consecutive_maxed_cues")
+        score += 3.0
+        severity = "high"
+    if near_max and next_cue and next_cue.duration <= short_duration and _visible_len(next_cue.text) >= 12:
+        reasons.append("micro_maxed_then_short_cue")
+        score += 2.4
+    if prev_near_max and cue.duration <= short_duration and chars >= 12:
+        reasons.append("micro_short_after_maxed_cue")
+        score += 2.2
+    if near_max and next_gap > 0.35:
+        reasons.append("micro_gap_after_maxed_cue")
+        score += min(2.0, next_gap)
+    if prev_near_max and prev_gap > 0.35:
+        reasons.append("micro_gap_before_after_maxed_cue")
+        score += min(1.6, prev_gap)
+    if cue.duration >= profile.max_duration - 0.25 and chars >= 28 and cps < 5.0:
+        reasons.append("micro_low_cps_long_cue")
+        score += 1.2
+
+    return sorted(set(reasons)), severity, score
+
+
+def _micro_candidate_cue_window(
+    cues: list[SubtitleCue],
+    index: int,
+    profile: Any,
+) -> tuple[int, int]:
+    start_index = max(0, index - 1)
+    end_index = min(len(cues) - 1, index + 1)
+    cue = cues[index]
+    next_cue = cues[index + 1] if index + 1 < len(cues) else None
+    prev_cue = cues[index - 1] if index else None
+    short_duration = max(profile.min_duration + 1.4, min(3.4, profile.max_duration * 0.55))
+    if next_cue and cue.duration >= profile.max_duration - 0.05 and next_cue.duration <= short_duration:
+        end_index = min(len(cues) - 1, index + 2)
+    if prev_cue and prev_cue.duration >= profile.max_duration - 0.05 and cue.duration <= short_duration:
+        start_index = max(0, index - 2)
+    return start_index, end_index
+
+
+def _merge_micro_drift_candidates(candidates: list[MicroDriftCandidate]) -> list[MicroDriftCandidate]:
+    if not candidates:
+        return []
+
+    ordered = sorted(candidates, key=lambda item: (item.timeline_range.start_char, -item.score))
+    merged: list[MicroDriftCandidate] = []
+    for item in ordered:
+        if not merged or item.timeline_range.start_char > merged[-1].timeline_range.end_char + 40:
+            merged.append(item)
+            continue
+        prev = merged[-1]
+        severity = "high" if "high" in {prev.timeline_range.severity, item.timeline_range.severity} else "medium"
+        merged[-1] = MicroDriftCandidate(
+            timeline_range=TimelineRange(
+                start_char=min(prev.timeline_range.start_char, item.timeline_range.start_char),
+                end_char=max(prev.timeline_range.end_char, item.timeline_range.end_char),
+                audio_start=min(prev.timeline_range.audio_start, item.timeline_range.audio_start),
+                audio_end=max(prev.timeline_range.audio_end, item.timeline_range.audio_end),
+                reasons=sorted(set(prev.timeline_range.reasons) | set(item.timeline_range.reasons)),
+                severity=severity,
+            ),
+            cue_start_index=min(prev.cue_start_index, item.cue_start_index),
+            cue_end_index=max(prev.cue_end_index, item.cue_end_index),
+            reasons=sorted(set(prev.reasons) | set(item.reasons)),
+            score=max(prev.score, item.score),
+        )
+    return merged
+
+
+def _micro_drift_range_from_local_tokens(
+    candidate: MicroDriftCandidate,
+    local_tokens: list[AlignmentToken],
+    mapped_tokens: list[AlignmentToken],
+    display_text: str,
+    audio_duration: float,
+    profile: Any,
+) -> MicroDriftRange | None:
+    samples = [
+        sample
+        for sample in _drift_samples_against_tokens(local_tokens, mapped_tokens)
+        if sample[1] > candidate.timeline_range.start_char and sample[0] < candidate.timeline_range.end_char
+    ]
+    run = _strongest_micro_drift_run(samples, display_text)
+    if not run:
+        return None
+
+    start_char, end_char, sample_count, visible_chars, median_drift, p75_drift, max_drift, signed_median = run
+    expanded_start = max(candidate.timeline_range.start_char, _previous_sentence_boundary(display_text, start_char, 90))
+    expanded_end = min(candidate.timeline_range.end_char, _next_sentence_boundary(display_text, end_char, 120))
+    expanded_start, expanded_end = _trim_char_range(display_text, expanded_start, expanded_end)
+    if expanded_end <= expanded_start:
+        return None
+    audio_start, audio_end = _audio_window_for_char_range(mapped_tokens, expanded_start, expanded_end, audio_duration)
+    severity = "high" if (
+        median_drift >= MICRO_DRIFT_HIGH_MEDIAN_THRESHOLD
+        or p75_drift >= MICRO_DRIFT_HIGH_P75_THRESHOLD
+        or max_drift >= 1.5
+    ) else "medium"
+    return MicroDriftRange(
+        timeline_range=TimelineRange(
+            start_char=expanded_start,
+            end_char=expanded_end,
+            audio_start=audio_start,
+            audio_end=audio_end,
+            reasons=sorted(set(candidate.timeline_range.reasons) | {"micro_drift", "silent_timeline_drift"}),
+            severity=severity,
+            index=0,
+        ),
+        cue_start_index=candidate.cue_start_index,
+        cue_end_index=candidate.cue_end_index,
+        sample_count=sample_count,
+        visible_chars=visible_chars,
+        median_drift=median_drift,
+        p75_drift=p75_drift,
+        max_drift=max_drift,
+        signed_median_drift=signed_median,
+        source="cue_shape",
+    )
+
+
+def _strongest_micro_drift_run(
+    samples: list[tuple[int, int, float, float]],
+    display_text: str,
+) -> tuple[int, int, int, int, float, float, float, float] | None:
+    ordered = sorted(samples, key=lambda item: (item[0], item[1]))
+    runs: list[list[tuple[int, int, float, float]]] = []
+    current: list[tuple[int, int, float, float]] = []
+    current_sign = 0
+    last_end = -1
+    for sample in ordered:
+        start_char, end_char, signed, abs_value = sample
+        if abs_value < MICRO_DRIFT_SAMPLE_THRESHOLD:
+            if current:
+                runs.append(current)
+                current = []
+                current_sign = 0
+            continue
+        sign = 1 if signed >= 0 else -1
+        continuous = bool(current) and sign == current_sign and start_char <= last_end + 4
+        if current and not continuous:
+            runs.append(current)
+            current = []
+        if not current:
+            current_sign = sign
+        current.append(sample)
+        last_end = max(last_end, end_char)
+    if current:
+        runs.append(current)
+
+    best: tuple[int, int, int, int, float, float, float, float] | None = None
+    best_score = 0.0
+    for run in runs:
+        if len(run) < MICRO_DRIFT_MIN_SAMPLES:
+            continue
+        start_char = min(item[0] for item in run)
+        end_char = max(item[1] for item in run)
+        visible_chars = _visible_len(display_text[start_char:end_char])
+        if visible_chars < MICRO_DRIFT_MIN_VISIBLE_CHARS:
+            continue
+        abs_values = [item[3] for item in run]
+        signed_values = [item[2] for item in run]
+        median_drift = median(abs_values)
+        p75_drift = _percentile_float(abs_values, 0.75)
+        max_drift = max(abs_values)
+        if median_drift < MICRO_DRIFT_MEDIAN_THRESHOLD and p75_drift < MICRO_DRIFT_P75_THRESHOLD:
+            continue
+        signed_median = median(signed_values)
+        score = median_drift * 2.0 + p75_drift + min(2.0, visible_chars / 24.0)
+        if score > best_score:
+            best_score = score
+            best = (start_char, end_char, len(run), visible_chars, median_drift, p75_drift, max_drift, signed_median)
+    return best
+
+
+def _drift_samples_against_tokens(
+    local_tokens: list[AlignmentToken],
+    mapped_tokens: list[AlignmentToken],
+) -> list[tuple[int, int, float, float]]:
+    mapped = sorted(
+        [
+            token
+            for token in mapped_tokens
+            if token.start_char is not None and token.end_char is not None
+        ],
+        key=lambda token: (token.start_char or 0, token.end_char or 0, token.start),
+    )
+    samples: list[tuple[int, int, float, float]] = []
+    for token in local_tokens:
+        if token.start_char is None or token.end_char is None:
+            continue
+        sample_char = max(token.start_char, min(token.end_char - 1, (token.start_char + token.end_char - 1) // 2))
+        global_time = _token_time_at_char(mapped, sample_char)
+        if global_time is None:
+            continue
+        local_time = (token.start + token.end) / 2
+        signed = local_time - global_time
+        samples.append((token.start_char, token.end_char, signed, abs(signed)))
+    return samples
+
+
+def _tokens_in_char_range(
+    tokens: list[AlignmentToken],
+    start_char: int,
+    end_char: int,
+) -> list[AlignmentToken]:
+    return sorted(
+        [
+            token
+            for token in tokens
+            if token.start_char is not None
+            and token.end_char is not None
+            and token.end_char > start_char
+            and token.start_char < end_char
+        ],
+        key=lambda token: (token.start_char or 0, token.start, token.end),
+    )
+
+
+def _validate_micro_replacement_tokens(
+    tokens: list[AlignmentToken],
+    display_text: str,
+    fragment_start: int,
+    fragment_end: int,
+    profile: Any,
+) -> str | None:
+    if not tokens:
+        return "no_tokens"
+    tokens = sorted(tokens, key=lambda token: (token.start_char or 0, token.start))
+    if (tokens[0].start_char or 0) > fragment_start + 6:
+        return "missing_fragment_start"
+    if (tokens[-1].end_char or 0) < fragment_end - 6:
+        return "missing_fragment_end"
+    last_time = tokens[0].start
+    low_conf_chars = 0
+    total_chars = max(1, _visible_len(display_text[fragment_start:fragment_end]))
+    for token in tokens:
+        if token.start < last_time - 0.12:
+            return "time_reversal"
+        last_time = max(last_time, token.end)
+        if token.confidence is not None and token.confidence < 0.08:
+            low_conf_chars += _visible_len(display_text[token.start_char or 0 : token.end_char or 0])
+    duration = max(0.1, tokens[-1].end - tokens[0].start)
+    cps = total_chars / duration
+    if cps < 1.2:
+        return f"too_slow:{cps:.3f}"
+    if cps > max(profile.max_chars_per_second * 1.9, 18.0):
+        return f"too_fast:{cps:.3f}"
+    if low_conf_chars / total_chars > 0.55:
+        return "low_confidence_ratio"
+    return None
+
+
+def _validate_replacement_timeline_compatible(
+    existing_tokens: list[AlignmentToken],
+    replacement: list[AlignmentToken],
+    start_char: int,
+    end_char: int,
+) -> str | None:
+    if not replacement:
+        return "no_tokens"
+    replacement_start = min(token.start for token in replacement)
+    replacement_end = max(token.end for token in replacement)
+    prev_token = max(
+        (
+            token
+            for token in existing_tokens
+            if token.end_char is not None and token.end_char <= start_char
+        ),
+        key=lambda token: token.end_char or 0,
+        default=None,
+    )
+    next_token = min(
+        (
+            token
+            for token in existing_tokens
+            if token.start_char is not None and token.start_char >= end_char
+        ),
+        key=lambda token: token.start_char or 0,
+        default=None,
+    )
+    if prev_token and replacement_start < prev_token.end - 0.12:
+        return "overlap_previous"
+    if next_token and replacement_end > next_token.start + 0.12:
+        return "overlap_next"
+    return None
+
+
+def _micro_repair_improves(before_median: float, after_median: float) -> bool:
+    if after_median <= MICRO_DRIFT_REPAIRED_TARGET_SECONDS:
+        return True
+    if before_median <= 0:
+        return False
+    return (before_median - after_median) / before_median >= MICRO_DRIFT_MIN_IMPROVEMENT_RATIO
+
+
+def _register_micro_drift_range(summary: TimelineRepairSummary, micro_range: MicroDriftRange) -> None:
+    payload = micro_range.to_payload()
+    existing = {
+        (item.get("start_char"), item.get("end_char"), tuple(item.get("reasons", [])))
+        for item in summary.micro_drift_ranges
+    }
+    key = (payload.get("start_char"), payload.get("end_char"), tuple(payload.get("reasons", [])))
+    if key not in existing:
+        summary.micro_drift_ranges.append(payload)
+    summary.micro_drift_run_count = len(summary.micro_drift_ranges)
+    summary.max_micro_drift_seconds = max(summary.max_micro_drift_seconds, micro_range.max_drift)
+
+
+def _append_unresolved_micro_drift_range(
+    summary: TimelineRepairSummary,
+    micro_range: MicroDriftRange,
+    mode: str,
+) -> None:
+    payload = {
+        **micro_range.to_payload(),
+        "mode": mode,
+        "confidence": "low",
+    }
+    existing = {
+        (item.get("start_char"), item.get("end_char"), item.get("mode"))
+        for item in summary.micro_drift_unresolved_ranges
+    }
+    key = (payload.get("start_char"), payload.get("end_char"), payload.get("mode"))
+    if key not in existing:
+        summary.micro_drift_unresolved_ranges.append(payload)
+    summary.micro_drift_unresolved_count = len(summary.micro_drift_unresolved_ranges)
+
+
+def _uses_zh_checkpoint_detection(language: str) -> bool:
+    return language in {"zh", "zh-TW"}
+
+
+def _build_checkpoint_ranges(
+    display_text: str,
+    mapped_tokens: list[AlignmentToken],
+    audio_duration: float,
+) -> list[TimelineRange]:
+    visible_total = _visible_len(display_text)
+    if visible_total < CHECKPOINT_MIN_VISIBLE_CHARS:
+        return []
+
+    if visible_total < CHECKPOINT_SMALL_TEXT_VISIBLE_CHARS:
+        target_visible_positions = [max(1, visible_total // 2)]
+    else:
+        target_visible_positions = list(
+            range(
+                CHECKPOINT_LONG_TEXT_STRIDE,
+                max(CHECKPOINT_LONG_TEXT_STRIDE + 1, visible_total - CHECKPOINT_LONG_TEXT_STRIDE // 2),
+                CHECKPOINT_LONG_TEXT_STRIDE,
+            )
+        )
+
+    if len(target_visible_positions) > CHECKPOINT_MAX_COUNT:
+        step = max(1, len(target_visible_positions) / CHECKPOINT_MAX_COUNT)
+        target_visible_positions = [
+            target_visible_positions[min(len(target_visible_positions) - 1, round(index * step))]
+            for index in range(CHECKPOINT_MAX_COUNT)
+        ]
+
+    ranges: list[TimelineRange] = []
+    seen_ranges: set[tuple[int, int]] = set()
+    for index, visible_pos in enumerate(target_visible_positions, start=1):
+        target_char = _char_after_visible_count(display_text, 0, len(display_text), visible_pos)
+        start_char, end_char = _checkpoint_fragment_range(display_text, target_char)
+        if end_char <= start_char:
+            continue
+        key = (start_char, end_char)
+        if key in seen_ranges:
+            continue
+        seen_ranges.add(key)
+        audio_start, audio_end = _audio_window_for_char_range(mapped_tokens, start_char, end_char, audio_duration)
+        if audio_end <= audio_start:
+            continue
+        ranges.append(
+            TimelineRange(
+                start_char=start_char,
+                end_char=end_char,
+                audio_start=audio_start,
+                audio_end=audio_end,
+                reasons=["checkpoint_drift_probe"],
+                severity="medium",
+                index=index,
+            )
+        )
+    return ranges
+
+
+def _checkpoint_fragment_range(display_text: str, target_char: int) -> tuple[int, int]:
+    target_char = min(max(0, target_char), len(display_text))
+    start = _previous_sentence_boundary(display_text, target_char, 110)
+    end = _next_sentence_boundary(display_text, target_char, 150)
+
+    for _ in range(3):
+        visible = _visible_len(display_text[start:end])
+        if visible >= CHECKPOINT_TARGET_MIN_CHARS or (start == 0 and end == len(display_text)):
+            break
+        start = _previous_sentence_boundary(display_text, start, 140) if start > 0 else start
+        end = _next_sentence_boundary(display_text, end, 180) if end < len(display_text) else end
+
+    if _visible_len(display_text[start:end]) > CHECKPOINT_TARGET_MAX_CHARS + 80:
+        soft_start = _char_after_visible_count(display_text, start, target_char, 35)
+        soft_end = _char_after_visible_count(display_text, target_char, end, CHECKPOINT_TARGET_MAX_CHARS - 35)
+        if soft_end > soft_start and _visible_len(display_text[soft_start:soft_end]) >= CHECKPOINT_TARGET_MIN_CHARS:
+            start, end = soft_start, soft_end
+
+    return _trim_char_range(display_text, start, end)
+
+
+def _verify_checkpoint_ranges(
+    local_realign: Any,
+    align_audio_path: Path,
+    display_text: str,
+    mapped_tokens: list[AlignmentToken],
+    ranges: list[TimelineRange],
+    work_dir: Path,
+    language: str,
+    profile: Any,
+    logs: list[str],
+    summary: TimelineRepairSummary,
+) -> list[DriftCheckpoint]:
+    checkpoints: list[DriftCheckpoint] = []
+    for range_ in ranges:
+        local_tokens = _try_local_realign_range(
+            local_realign,
+            align_audio_path,
+            display_text,
+            range_,
+            work_dir,
+            language,
+            profile,
+            logs,
+            summary,
+            paddings=(10.0,),
+        )
+        if not local_tokens:
+            continue
+        checkpoint = _checkpoint_from_local_tokens(range_, local_tokens, mapped_tokens, profile)
+        if checkpoint:
+            checkpoints.append(checkpoint)
+    return checkpoints
+
+
+def _checkpoint_from_local_tokens(
+    range_: TimelineRange,
+    local_tokens: list[AlignmentToken],
+    mapped_tokens: list[AlignmentToken],
+    profile: Any,
+) -> DriftCheckpoint | None:
+    drifts = _drifts_against_tokens(local_tokens, mapped_tokens)
+    if len(drifts) < 4:
+        return None
+    signed_values = [signed for signed, _abs_value in drifts]
+    abs_values = [abs_value for _signed, abs_value in drifts]
+    median_drift = median(abs_values)
+    p95_drift = _percentile_float(abs_values, 0.95)
+    max_drift = max(abs_values)
+    signed_median = median(signed_values)
+    severity = _checkpoint_drift_severity(median_drift, p95_drift, max_drift)
+    return DriftCheckpoint(
+        index=range_.index,
+        start_char=range_.start_char,
+        end_char=range_.end_char,
+        audio_start=range_.audio_start,
+        audio_end=range_.audio_end,
+        sample_count=len(drifts),
+        median_drift=median_drift,
+        p95_drift=p95_drift,
+        max_drift=max_drift,
+        signed_median_drift=signed_median,
+        severity=severity,
+        local_tokens=local_tokens,
+    )
+
+
+def _recompute_checkpoint_against_tokens(
+    checkpoint: DriftCheckpoint,
+    mapped_tokens: list[AlignmentToken],
+    profile: Any,
+) -> DriftCheckpoint:
+    recomputed = _checkpoint_from_local_tokens(
+        TimelineRange(
+            start_char=checkpoint.start_char,
+            end_char=checkpoint.end_char,
+            audio_start=checkpoint.audio_start,
+            audio_end=checkpoint.audio_end,
+            reasons=["checkpoint_drift_probe"],
+            severity="medium",
+            index=checkpoint.index,
+        ),
+        checkpoint.local_tokens,
+        mapped_tokens,
+        profile,
+    )
+    return recomputed or checkpoint
+
+
+def _drifts_against_tokens(
+    local_tokens: list[AlignmentToken],
+    mapped_tokens: list[AlignmentToken],
+) -> list[tuple[float, float]]:
+    mapped = sorted(
+        [
+            token
+            for token in mapped_tokens
+            if token.start_char is not None and token.end_char is not None
+        ],
+        key=lambda token: (token.start_char or 0, token.end_char or 0, token.start),
+    )
+    drifts: list[tuple[float, float]] = []
+    for token in local_tokens:
+        if token.start_char is None or token.end_char is None:
+            continue
+        sample_char = max(token.start_char, min(token.end_char - 1, (token.start_char + token.end_char - 1) // 2))
+        global_time = _token_time_at_char(mapped, sample_char)
+        if global_time is None:
+            continue
+        local_time = (token.start + token.end) / 2
+        signed = local_time - global_time
+        drifts.append((signed, abs(signed)))
+    return drifts
+
+
+def _token_time_at_char(tokens: list[AlignmentToken], char_pos: int) -> float | None:
+    nearest: tuple[int, AlignmentToken] | None = None
+    for token in tokens:
+        start_char = token.start_char or 0
+        end_char = token.end_char or start_char
+        if start_char <= char_pos < end_char:
+            span = max(1, end_char - start_char)
+            ratio = min(1.0, max(0.0, (char_pos + 0.5 - start_char) / span))
+            return token.start + (token.end - token.start) * ratio
+        distance = min(abs(char_pos - start_char), abs(char_pos - max(start_char, end_char - 1)))
+        if nearest is None or distance < nearest[0]:
+            nearest = (distance, token)
+    if nearest and nearest[0] <= 3:
+        token = nearest[1]
+        return (token.start + token.end) / 2
+    return None
+
+
+def _checkpoint_drift_severity(median_drift: float, p95_drift: float, max_drift: float) -> str:
+    if median_drift >= CHECKPOINT_HIGH_MEDIAN_DRIFT:
+        return "high"
+    if p95_drift >= CHECKPOINT_HIGH_P95_DRIFT and median_drift >= CHECKPOINT_HIGH_SUPPORTING_MEDIAN_DRIFT:
+        return "high"
+    if median_drift >= CHECKPOINT_MEDIUM_MEDIAN_DRIFT:
+        return "medium"
+    if p95_drift >= CHECKPOINT_MEDIUM_P95_DRIFT and median_drift >= CHECKPOINT_MEDIUM_SUPPORTING_MEDIAN_DRIFT:
+        return "medium"
+    return "ok"
+
+
+def _drift_ranges_from_checkpoints(
+    display_text: str,
+    mapped_tokens: list[AlignmentToken],
+    checkpoints: list[DriftCheckpoint],
+    audio_duration: float,
+) -> list[DriftRange]:
+    drifted = [checkpoint for checkpoint in checkpoints if checkpoint.severity != "ok"]
+    if not drifted:
+        return []
+
+    raw_ranges: list[DriftRange] = []
+    for checkpoint in drifted:
+        start_char = _previous_sentence_boundary(display_text, checkpoint.start_char, 260)
+        end_char = _next_sentence_boundary(display_text, checkpoint.end_char, 320)
+        audio_start, audio_end = _audio_window_for_char_range(mapped_tokens, start_char, end_char, audio_duration)
+        timeline_range = TimelineRange(
+            start_char=start_char,
+            end_char=end_char,
+            audio_start=audio_start,
+            audio_end=audio_end,
+            reasons=["checkpoint_drift", "silent_timeline_drift"],
+            severity=checkpoint.severity,
+            index=checkpoint.index,
+        )
+        raw_ranges.append(
+            DriftRange(
+                timeline_range=timeline_range,
+                checkpoint_count=1,
+                median_drift=checkpoint.median_drift,
+                p95_drift=checkpoint.p95_drift,
+                max_drift=checkpoint.max_drift,
+                signed_median_drift=checkpoint.signed_median_drift,
+                direction=checkpoint.direction,
+            )
+        )
+
+    return _merge_drift_ranges(raw_ranges)
+
+
+def _merge_drift_ranges(ranges: list[DriftRange]) -> list[DriftRange]:
+    if not ranges:
+        return []
+    ordered = sorted(ranges, key=lambda item: item.timeline_range.start_char)
+    merged: list[DriftRange] = []
+    for item in ordered:
+        if (
+            not merged
+            or item.timeline_range.start_char > merged[-1].timeline_range.end_char + 240
+            or item.direction != merged[-1].direction
+        ):
+            item.timeline_range.index = len(merged) + 1
+            merged.append(item)
+            continue
+        prev = merged[-1]
+        timeline_range = TimelineRange(
+            start_char=prev.timeline_range.start_char,
+            end_char=max(prev.timeline_range.end_char, item.timeline_range.end_char),
+            audio_start=min(prev.timeline_range.audio_start, item.timeline_range.audio_start),
+            audio_end=max(prev.timeline_range.audio_end, item.timeline_range.audio_end),
+            reasons=sorted(set(prev.timeline_range.reasons) | set(item.timeline_range.reasons)),
+            severity="high" if "high" in {prev.severity, item.severity} else "medium",
+            index=prev.timeline_range.index,
+        )
+        merged[-1] = DriftRange(
+            timeline_range=timeline_range,
+            checkpoint_count=prev.checkpoint_count + item.checkpoint_count,
+            median_drift=max(prev.median_drift, item.median_drift),
+            p95_drift=max(prev.p95_drift, item.p95_drift),
+            max_drift=max(prev.max_drift, item.max_drift),
+            signed_median_drift=prev.signed_median_drift
+            if abs(prev.signed_median_drift) >= abs(item.signed_median_drift)
+            else item.signed_median_drift,
+            direction=prev.direction,
+        )
+    return merged
+
+
+def _prioritize_drift_ranges(ranges: list[DriftRange]) -> list[DriftRange]:
+    return sorted(
+        ranges,
+        key=lambda item: (
+            0 if item.severity == "high" else 1,
+            -item.max_drift,
+            item.timeline_range.start_char,
+        ),
+    )
+
+
+def _register_drift_suspects(summary: TimelineRepairSummary, drift_ranges: list[DriftRange]) -> None:
+    existing = {
+        (item.get("start_char"), item.get("end_char"), tuple(item.get("reasons", [])))
+        for item in summary.suspect_ranges
+    }
+    existing_drift = {
+        (item.get("start_char"), item.get("end_char"), tuple(item.get("reasons", [])))
+        for item in summary.drift_suspect_ranges
+    }
+    for index, drift_range in enumerate(drift_ranges, start=1):
+        drift_range.timeline_range.index = index
+        payload = drift_range.to_payload()
+        key = (payload.get("start_char"), payload.get("end_char"), tuple(payload.get("reasons", [])))
+        if key not in existing_drift:
+            summary.drift_suspect_ranges.append(payload)
+            existing_drift.add(key)
+        if key not in existing:
+            summary.suspect_ranges.append(payload)
+            existing.add(key)
+
+
+def _append_unresolved_drift_range(summary: TimelineRepairSummary, drift_range: DriftRange, mode: str) -> None:
+    payload = {
+        **drift_range.to_payload(),
+        "mode": mode,
+        "confidence": "low",
+    }
+    existing = {
+        (item.get("start_char"), item.get("end_char"), item.get("mode"))
+        for item in summary.unresolved_drift_ranges
+    }
+    key = (payload.get("start_char"), payload.get("end_char"), payload.get("mode"))
+    if key not in existing:
+        summary.unresolved_drift_ranges.append(payload)
+
+
+def _update_checkpoint_drift_stats(summary: TimelineRepairSummary, checkpoints: list[DriftCheckpoint]) -> None:
+    drifts = [checkpoint.max_drift for checkpoint in checkpoints]
+    summary.verified_checkpoint_count = len(checkpoints)
+    summary.checkpoint_drift_count = sum(1 for checkpoint in checkpoints if checkpoint.severity != "ok")
+    summary.max_checkpoint_drift_seconds = max(drifts, default=0.0)
+    summary.p95_checkpoint_drift_seconds = _percentile_float(drifts, 0.95)
+
+
+def _audio_window_for_char_range(
+    mapped_tokens: list[AlignmentToken],
+    start_char: int,
+    end_char: int,
+    audio_duration: float,
+) -> tuple[float, float]:
+    tokens = [
+        token
+        for token in mapped_tokens
+        if token.start_char is not None
+        and token.end_char is not None
+        and token.end_char > start_char
+        and token.start_char < end_char
+    ]
+    if tokens:
+        return max(0.0, min(token.start for token in tokens)), min(audio_duration, max(token.end for token in tokens))
+
+    prev_token = _nearest_token_before(mapped_tokens, start_char)
+    next_token = _nearest_token_after(mapped_tokens, end_char, audio_duration)
+    audio_start = prev_token.end if prev_token else 0.0
+    audio_end = next_token.start if next_token else audio_duration
+    return max(0.0, audio_start), min(audio_duration, max(audio_start + 0.5, audio_end))
+
+
 def _detect_zh_cue_timeline_ranges(
     cues: list[SubtitleCue],
     display_text: str,
@@ -539,6 +1751,7 @@ def _try_local_realign_range(
     profile: Any,
     logs: list[str],
     summary: TimelineRepairSummary,
+    paddings: tuple[float, ...] = (4.0, 10.0),
 ) -> list[AlignmentToken] | None:
     fragment_start, fragment_end = _trim_char_range(display_text, range_.start_char, range_.end_char)
     if fragment_end <= fragment_start:
@@ -553,7 +1766,7 @@ def _try_local_realign_range(
         )
         return None
 
-    for attempt_index, padding in enumerate((4.0, 10.0), start=1):
+    for attempt_index, padding in enumerate(paddings, start=1):
         audio_start = max(0.0, range_.audio_start - padding)
         audio_end = range_.audio_end + padding
         attempt_id = f"{range_.index}_{attempt_index}"
@@ -712,7 +1925,7 @@ def _expand_raw_suspect_range(
 def _previous_sentence_boundary(text: str, start: int, limit: int) -> int:
     lower = max(0, start - limit)
     for index in range(start - 1, lower - 1, -1):
-        if text[index] in "。！？!?」』":
+        if text[index] in "。！？!?；;」』”’":
             return index + 1
     return lower
 
@@ -720,7 +1933,7 @@ def _previous_sentence_boundary(text: str, start: int, limit: int) -> int:
 def _next_sentence_boundary(text: str, end: int, limit: int) -> int:
     upper = min(len(text), end + limit)
     for index in range(max(0, end), upper):
-        if text[index] in "。！？!?」』":
+        if text[index] in "。！？!?；;」』”’":
             return index + 1
     return upper
 
@@ -1046,9 +2259,21 @@ def _apply_timeline_quality(quality_report: dict[str, Any], summary: TimelineRep
     warnings = quality_report.setdefault("warnings", [])
     if summary.status == "needs_review":
         quality_report["quality_score"] = min(quality_report.get("quality_score", 100), 75)
-        warnings.append("存在低置信时间轴估算段，需人工检查时间轴")
+        if summary.unresolved_drift_ranges:
+            _append_warning_once(warnings, "存在局部时间轴漂移，需检查时间轴")
+        if summary.micro_drift_unresolved_ranges:
+            _append_warning_once(warnings, "存在局部短段时间轴漂移，需检查时间轴")
+        if summary.low_confidence_ranges:
+            _append_warning_once(warnings, "存在低置信时间轴估算段，需人工检查时间轴")
     elif summary.status == "repaired":
         quality_report["quality_score"] = min(quality_report.get("quality_score", 100), 95)
+    elif summary.checkpoint_drift_count:
+        quality_report["quality_score"] = min(quality_report.get("quality_score", 100), 90)
+
+
+def _append_warning_once(warnings: list[str], message: str) -> None:
+    if message not in warnings:
+        warnings.append(message)
 
 
 def _repair_timeline_if_needed(
@@ -1510,6 +2735,14 @@ def _reindex_cues(cues: list[SubtitleCue]) -> list[SubtitleCue]:
         )
         for index, cue in enumerate(cues, start=1)
     ]
+
+
+def _percentile_float(values: list[float], percentile: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    index = round((len(ordered) - 1) * percentile)
+    return float(ordered[index])
 
 
 def _visible_len(text: str) -> int:

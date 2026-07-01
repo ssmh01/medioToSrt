@@ -19,6 +19,14 @@ class StableTsEngine:
 
     def __init__(self, model_name: str = "base") -> None:
         self.model_name = model_name
+        self._model: Any | None = None
+
+    def _load_model(self) -> Any:
+        if self._model is None:
+            import stable_whisper  # type: ignore
+
+            self._model = stable_whisper.load_model(self.model_name)
+        return self._model
 
     def align(
         self,
@@ -37,7 +45,7 @@ class StableTsEngine:
 
         logs.append(f"加载 stable-ts 模型: {self.model_name}")
         try:
-            model = stable_whisper.load_model(self.model_name)
+            model = self._load_model()
             language_arg = "zh" if language == "zh-TW" else language
             logs.append(f"开始 stable-ts forced alignment，language={language_arg}")
             result = model.align(str(audio_path), cleaned_text.align_text, language=language_arg)
