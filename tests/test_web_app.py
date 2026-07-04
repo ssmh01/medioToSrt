@@ -92,6 +92,7 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertNotIn("auto", payload["languages"])
+        self.assertIn("ko", payload["languages"])
         self.assertNotIn("language", payload["defaults"])
         self.assertEqual(payload["defaults"]["subtitle_profile"], "youtube_long")
 

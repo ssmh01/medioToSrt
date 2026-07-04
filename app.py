@@ -22,7 +22,7 @@ from autosrt_aligner.profiles import PROFILE_LABELS, SUPPORTED_LANGUAGES
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
-LANGUAGES = ["zh", "zh-TW", "ja", "en"]
+LANGUAGES = ["zh", "zh-TW", "ja", "en", "ko"]
 FILE_LABELS = {
     "srt": "字幕文件.srt",
     "vtt": "字幕文件.vtt",

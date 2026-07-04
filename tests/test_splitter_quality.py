@@ -96,6 +96,20 @@ class SplitterQualityTests(unittest.TestCase):
         self.assertLessEqual(max(len("".join(cue.text.split())) for cue in cues), 38)
         assert_not_split_inside(self, text, cues, '"管"她')
 
+    def test_korean_splitter_avoids_common_word_boundaries(self):
+        text = (
+            "어머니는 괜찮다고 말했지만 마음속으로는 오래 생각했습니다. "
+            "그날 밤에도 가족들은 조용히 서로를 바라보며 다시 괜찮다고 말했습니다. "
+            "나는 그 말이 끝나기도 전에 어머니는 웃으면서 천천히 고개를 끄덕였습니다."
+        )
+        profile = resolve_profile("youtube_long", "ko", min_duration=1.2, max_duration=4.2, max_chars_per_line=20)
+        cues = split_subtitles(text, char_tokens(text, step=0.12), "ko", profile)
+        self.assertTrue(validate_subtitle_continuity(cues, text))
+        for cue in cues:
+            self.assertNotIn("\n", cue.text)
+        for phrase in ["어머니는", "괜찮다고", "생각했습니다"]:
+            assert_not_split_inside(self, text, cues, phrase)
+
     def test_timing_smoothing_reduces_large_gap_and_fast_cue(self):
         profile = resolve_profile("youtube_long", "ja", min_duration=1.2, max_duration=6.5, max_chars_per_line=18)
         cues = [
@@ -157,6 +171,21 @@ class SplitterQualityTests(unittest.TestCase):
         self.assertGreater(report["zh_unsafe_boundary_count"], 0)
         self.assertGreater(report["zh_timeline_risk_count"], 0)
         self.assertIn("存在中文不安全切段", report["warnings"])
+
+    def test_quality_report_adds_korean_risk_metrics(self):
+        text = "어머니는 괜찮다고 말했습니다."
+        split_at = text.index("찮")
+        cues = [
+            SubtitleCue(1, 0.0, 0.35, text[:split_at], 0, split_at),
+            SubtitleCue(2, 0.88, 2.4, text[split_at:], split_at, len(text)),
+        ]
+        profile = resolve_profile("youtube_long", "ko", min_duration=1.2, max_duration=6.5, max_chars_per_line=20)
+        report = build_quality_report(cues, text, 2.4, profile, "ko")
+        self.assertEqual(report["weak_boundary_count"], 1)
+        self.assertGreater(report["ko_fast_cue_count"], 0)
+        self.assertGreater(report["ko_unsafe_boundary_count"], 0)
+        self.assertGreater(report["ko_timeline_risk_count"], 0)
+        self.assertIn("存在韩语不安全切段", report["warnings"])
 
 
 if __name__ == "__main__":

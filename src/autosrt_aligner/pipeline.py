@@ -133,7 +133,7 @@ def run_alignment_job(
         )
     cues = split_subtitles(cleaned.display_text, mapped_tokens, language, profile)
     pre_repair_cue_diagnostics = _cue_timeline_diagnostics(cues, cleaned.display_text, profile, language)
-    mapped_tokens, zh_cue_repaired = _repair_zh_cue_risks_with_local_realign(
+    mapped_tokens, cue_risk_repaired = _repair_cue_risks_with_local_realign(
         mapped_tokens,
         cues,
         cleaned.display_text,
@@ -146,7 +146,7 @@ def run_alignment_job(
         logs,
         timeline_summary,
     )
-    if zh_cue_repaired:
+    if cue_risk_repaired:
         post_repair_token_diagnostics = _token_timeline_diagnostics(
             mapped_tokens,
             cleaned.display_text,
@@ -188,9 +188,10 @@ def run_alignment_job(
     if timeline_repair is not None:
         timeline_summary.register_fallback(timeline_repair)
     post_repair_cue_diagnostics = _cue_timeline_diagnostics(cues, cleaned.display_text, profile, language)
-    _register_unresolved_zh_timeline_risks(
+    _register_unresolved_cue_timeline_risks(
         timeline_summary,
-        _detect_zh_cue_timeline_ranges(cues, cleaned.display_text, audio_duration, profile, language),
+        _detect_cue_timeline_ranges(cues, cleaned.display_text, audio_duration, profile, language),
+        language,
     )
     _apply_timeline_quality(quality_report, timeline_summary)
     if timeline_repair is not None:
@@ -529,7 +530,7 @@ def _repair_tokens_with_local_realign(
     return repaired_tokens, summary
 
 
-def _repair_zh_cue_risks_with_local_realign(
+def _repair_cue_risks_with_local_realign(
     mapped_tokens: list[AlignmentToken],
     cues: list[SubtitleCue],
     display_text: str,
@@ -542,7 +543,7 @@ def _repair_zh_cue_risks_with_local_realign(
     logs: list[str],
     summary: TimelineRepairSummary,
 ) -> tuple[list[AlignmentToken], bool]:
-    suspect_ranges = _detect_zh_cue_timeline_ranges(cues, display_text, audio_duration, profile, language)
+    suspect_ranges = _detect_cue_timeline_ranges(cues, display_text, audio_duration, profile, language)
     if not suspect_ranges:
         return mapped_tokens, False
 
@@ -552,12 +553,12 @@ def _repair_zh_cue_risks_with_local_realign(
         if key not in known_ranges:
             summary.suspect_ranges.append(range_.to_payload())
             known_ranges.add(key)
-    logs.append(f"检测到 {len(suspect_ranges)} 个中文 cue 级时间轴风险，开始局部重对齐")
+    logs.append(f"检测到 {len(suspect_ranges)} 个 cue 级时间轴风险，开始局部重对齐")
 
     local_realign = getattr(engine, "realign_fragment", None)
     if not callable(local_realign):
         for range_ in suspect_ranges:
-            _append_low_confidence_range(summary, range_, "zh_local_realign_unavailable")
+            _append_low_confidence_range(summary, range_, _cue_risk_mode(language, "local_realign_unavailable"))
         return mapped_tokens, False
 
     repaired_tokens = list(mapped_tokens)
@@ -584,17 +585,45 @@ def _repair_zh_cue_risks_with_local_realign(
             summary.repaired_ranges.append(
                 {
                     **range_.to_payload(),
-                    "mode": "zh_cue_local_realign",
+                    "mode": _cue_risk_mode(language, "cue_local_realign"),
                     "confidence": "high",
                     "token_count": len(result),
                 }
             )
             changed = True
         else:
-            _append_low_confidence_range(summary, range_, "zh_cue_local_realign_failed")
+            _append_low_confidence_range(summary, range_, _cue_risk_mode(language, "cue_local_realign_failed"))
 
     repaired_tokens.sort(key=lambda token: ((token.start_char or 0), token.start, token.end))
     return repaired_tokens, changed
+
+
+def _repair_zh_cue_risks_with_local_realign(
+    mapped_tokens: list[AlignmentToken],
+    cues: list[SubtitleCue],
+    display_text: str,
+    engine: AlignmentEngine,
+    align_audio_path: Path,
+    work_dir: Path,
+    language: str,
+    audio_duration: float | None,
+    profile: Any,
+    logs: list[str],
+    summary: TimelineRepairSummary,
+) -> tuple[list[AlignmentToken], bool]:
+    return _repair_cue_risks_with_local_realign(
+        mapped_tokens,
+        cues,
+        display_text,
+        engine,
+        align_audio_path,
+        work_dir,
+        language,
+        audio_duration,
+        profile,
+        logs,
+        summary,
+    )
 
 
 def _repair_checkpoint_drifts_with_local_realign(
@@ -609,7 +638,7 @@ def _repair_checkpoint_drifts_with_local_realign(
     logs: list[str],
     summary: TimelineRepairSummary,
 ) -> tuple[list[AlignmentToken], bool]:
-    if not _uses_zh_checkpoint_detection(language) or not audio_duration or audio_duration <= 0:
+    if not _uses_dense_text_checkpoint_detection(language) or not audio_duration or audio_duration <= 0:
         return mapped_tokens, False
 
     if _visible_len(display_text) < CHECKPOINT_MIN_VISIBLE_CHARS:
@@ -720,7 +749,7 @@ def _repair_micro_drifts_with_local_realign(
     logs: list[str],
     summary: TimelineRepairSummary,
 ) -> tuple[list[AlignmentToken], bool]:
-    if not _uses_zh_checkpoint_detection(language) or not audio_duration or audio_duration <= 0:
+    if not _uses_dense_text_checkpoint_detection(language) or not audio_duration or audio_duration <= 0:
         return mapped_tokens, False
 
     local_realign = getattr(engine, "realign_fragment", None)
@@ -833,7 +862,7 @@ def _detect_micro_drift_candidates(
     profile: Any,
     language: str,
 ) -> list[MicroDriftCandidate]:
-    if language not in {"zh", "zh-TW"} or len(cues) < 2:
+    if not _uses_dense_text_checkpoint_detection(language) or len(cues) < 2:
         return []
 
     raw: list[MicroDriftCandidate] = []
@@ -1233,8 +1262,12 @@ def _append_unresolved_micro_drift_range(
     summary.micro_drift_unresolved_count = len(summary.micro_drift_unresolved_ranges)
 
 
+def _uses_dense_text_checkpoint_detection(language: str) -> bool:
+    return language_group(language) in {"cjk", "ko"}
+
+
 def _uses_zh_checkpoint_detection(language: str) -> bool:
-    return language in {"zh", "zh-TW"}
+    return _uses_dense_text_checkpoint_detection(language)
 
 
 def _build_checkpoint_ranges(
@@ -1613,17 +1646,22 @@ def _audio_window_for_char_range(
     return max(0.0, audio_start), min(audio_duration, max(audio_start + 0.5, audio_end))
 
 
-def _detect_zh_cue_timeline_ranges(
+def _detect_cue_timeline_ranges(
     cues: list[SubtitleCue],
     display_text: str,
     audio_duration: float | None,
     profile: Any,
     language: str,
 ) -> list[TimelineRange]:
-    if language_group(language) != "cjk" or len(cues) < 2:
+    group = language_group(language)
+    if group not in {"cjk", "ko"} or len(cues) < 2:
         return []
 
     raw_ranges: list[tuple[int, int, list[str], str]] = []
+    prefix = _cue_risk_prefix(language)
+    long_chars = _cue_risk_long_chars(language)
+    fast_cps = _cue_risk_fast_cps(language)
+    severe_fast_cps = _cue_risk_severe_fast_cps(language)
     for index, cue in enumerate(cues):
         next_cue = cues[index + 1] if index + 1 < len(cues) else None
         gap = (next_cue.start - cue.end) if next_cue else 0.0
@@ -1634,19 +1672,19 @@ def _detect_zh_cue_timeline_ranges(
         severity = "medium"
 
         if next_cue and gap > 1.5:
-            reasons.append("zh_severe_gap")
+            reasons.append(f"{prefix}_severe_gap")
             severity = "high"
-        if next_cue and gap > 0.8 and (near_max or chars > 34):
-            reasons.append("zh_long_cue_gap")
+        if next_cue and gap > 0.8 and (near_max or chars > long_chars):
+            reasons.append(f"{prefix}_long_cue_gap")
             severity = "high"
-        if cps > 9.5 or (cps > 8.5 and chars > 18):
-            reasons.append("zh_fast_cue")
-            if cps > 9.5:
+        if cps > severe_fast_cps or (cps > fast_cps and chars > 18):
+            reasons.append(f"{prefix}_fast_cue")
+            if cps > severe_fast_cps:
                 severity = "high"
         if next_cue and _is_high_risk_boundary(display_text, cue.end_char, language):
-            reasons.append("zh_quote_boundary")
-        if _is_zh_maxed_duration_cluster(cues, index, profile):
-            reasons.append("zh_maxed_duration_cluster")
+            reasons.append("zh_quote_boundary" if group == "cjk" else "ko_unsafe_boundary")
+        if _is_dense_maxed_duration_cluster(cues, index, profile, language):
+            reasons.append(f"{prefix}_maxed_duration_cluster")
 
         if not reasons:
             continue
@@ -1660,7 +1698,17 @@ def _detect_zh_cue_timeline_ranges(
     return merged[:4]
 
 
-def _is_zh_maxed_duration_cluster(cues: list[SubtitleCue], index: int, profile: Any) -> bool:
+def _detect_zh_cue_timeline_ranges(
+    cues: list[SubtitleCue],
+    display_text: str,
+    audio_duration: float | None,
+    profile: Any,
+    language: str,
+) -> list[TimelineRange]:
+    return _detect_cue_timeline_ranges(cues, display_text, audio_duration, profile, language)
+
+
+def _is_dense_maxed_duration_cluster(cues: list[SubtitleCue], index: int, profile: Any, language: str) -> bool:
     if index + 2 >= len(cues):
         return False
     window = cues[index : index + 3]
@@ -1668,7 +1716,7 @@ def _is_zh_maxed_duration_cluster(cues: list[SubtitleCue], index: int, profile: 
     if len(maxed) < 3:
         return False
     avg_chars = sum(_visible_len(cue.text) for cue in window) / 3
-    return avg_chars > 30
+    return avg_chars > _cue_risk_cluster_chars(language)
 
 
 def _merge_zh_cue_ranges(
@@ -1710,6 +1758,30 @@ def _merge_zh_cue_ranges(
     return ranges
 
 
+def _cue_risk_prefix(language: str) -> str:
+    return "ko" if language_group(language) == "ko" else "zh"
+
+
+def _cue_risk_mode(language: str, suffix: str) -> str:
+    return f"{_cue_risk_prefix(language)}_{suffix}"
+
+
+def _cue_risk_long_chars(language: str) -> int:
+    return 38 if language_group(language) == "ko" else 34
+
+
+def _cue_risk_cluster_chars(language: str) -> int:
+    return 34 if language_group(language) == "ko" else 30
+
+
+def _cue_risk_fast_cps(language: str) -> float:
+    return 9.5 if language_group(language) == "ko" else 8.5
+
+
+def _cue_risk_severe_fast_cps(language: str) -> float:
+    return 10.5 if language_group(language) == "ko" else 9.5
+
+
 def _append_low_confidence_range(summary: TimelineRepairSummary, range_: TimelineRange, mode: str) -> None:
     payload = {
         **range_.to_payload(),
@@ -1725,9 +1797,10 @@ def _append_low_confidence_range(summary: TimelineRepairSummary, range_: Timelin
         summary.low_confidence_ranges.append(payload)
 
 
-def _register_unresolved_zh_timeline_risks(
+def _register_unresolved_cue_timeline_risks(
     summary: TimelineRepairSummary,
     suspect_ranges: list[TimelineRange],
+    language: str,
 ) -> None:
     repaired = {
         (item.get("start_char"), item.get("end_char"))
@@ -1738,7 +1811,14 @@ def _register_unresolved_zh_timeline_risks(
         if (range_.start_char, range_.end_char) in repaired:
             continue
         if range_.severity == "high":
-            _append_low_confidence_range(summary, range_, "zh_unresolved_cue_risk")
+            _append_low_confidence_range(summary, range_, _cue_risk_mode(language, "unresolved_cue_risk"))
+
+
+def _register_unresolved_zh_timeline_risks(
+    summary: TimelineRepairSummary,
+    suspect_ranges: list[TimelineRange],
+) -> None:
+    _register_unresolved_cue_timeline_risks(summary, suspect_ranges, "zh")
 
 
 def _try_local_realign_range(
@@ -2240,7 +2320,8 @@ def _cue_timeline_diagnostics(
     gaps = [cur.start - prev.end for prev, cur in zip(cues, cues[1:])]
     cps_values = [_visible_len(cue.text) / max(cue.duration, 0.1) for cue in cues]
     lengths = [_visible_len(cue.text) for cue in cues]
-    zh_ranges = _detect_zh_cue_timeline_ranges(cues, display_text, None, profile, language)
+    cue_ranges = _detect_cue_timeline_ranges(cues, display_text, None, profile, language)
+    group = language_group(language)
     return {
         "cue_count": len(cues),
         "max_gap_seconds": round(max(gaps, default=0.0), 3),
@@ -2248,8 +2329,12 @@ def _cue_timeline_diagnostics(
         "max_chars_per_second": round(max(cps_values, default=0.0), 3),
         "max_chars_per_cue": max(lengths, default=0),
         "overlap_count": sum(1 for prev, cur in zip(cues, cues[1:]) if cur.start < prev.end),
-        "zh_timeline_risk_count": len(zh_ranges),
-        "zh_timeline_risks": [range_.to_payload() for range_ in zh_ranges],
+        "cue_timeline_risk_count": len(cue_ranges),
+        "cue_timeline_risks": [range_.to_payload() for range_ in cue_ranges],
+        "zh_timeline_risk_count": len(cue_ranges) if group == "cjk" else 0,
+        "zh_timeline_risks": [range_.to_payload() for range_ in cue_ranges] if group == "cjk" else [],
+        "ko_timeline_risk_count": len(cue_ranges) if group == "ko" else 0,
+        "ko_timeline_risks": [range_.to_payload() for range_ in cue_ranges] if group == "ko" else [],
     }
 
 

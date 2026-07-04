@@ -47,6 +47,7 @@ JA_KATAKANA_RE = re.compile(r"[\u30a0-\u30ffー]")
 JA_KANJI_RE = re.compile(r"[\u3400-\u9fff々]")
 JA_NUMERAL_RE = re.compile(r"[0-9０-９一二三四五六七八九十百千万億兆]")
 JA_COUNTER_RE = re.compile(r"[円年月日人個本枚台階歳才分秒]")
+KO_HANGUL_RE = re.compile(r"[\u1100-\u11ff\u3130-\u318f\uac00-\ud7a3]")
 JA_SMALL_KANA = {
     "っ",
     "ゃ",
@@ -70,9 +71,13 @@ JA_SMALL_KANA = {
 }
 JA_REPAIR_SCAN_CHARS = 12
 ZH_REPAIR_SCAN_CHARS = 12
+KO_REPAIR_SCAN_CHARS = 16
 ZH_FORCE_SPLIT_CHARS = 38
 ZH_LONG_CUE_CHARS = 34
 ZH_COMFORT_CPS = 8.5
+KO_FORCE_SPLIT_CHARS = 44
+KO_LONG_CUE_CHARS = 38
+KO_COMFORT_CPS = 9.5
 VISUAL_GAP_TARGET_SECONDS = 0.20
 
 
@@ -182,11 +187,17 @@ def _break_score(
     score -= abs(chars - ideal_chars) * 0.55
     if chars > profile.max_chars_total:
         score -= 18 + (chars - profile.max_chars_total) * 2.2
-    if language_group(language) == "cjk":
+    group = language_group(language)
+    if group == "cjk":
         if chars > ZH_LONG_CUE_CHARS:
             score -= (chars - ZH_LONG_CUE_CHARS) * 3.8
         if chars > ZH_FORCE_SPLIT_CHARS:
             score -= 50 + (chars - ZH_FORCE_SPLIT_CHARS) * 5.0
+    elif group == "ko":
+        if chars > KO_LONG_CUE_CHARS:
+            score -= (chars - KO_LONG_CUE_CHARS) * 3.2
+        if chars > KO_FORCE_SPLIT_CHARS:
+            score -= 46 + (chars - KO_FORCE_SPLIT_CHARS) * 4.4
     if chars < max(4, profile.max_chars_per_line * 0.45) and index + 1 < len(tokens):
         score -= 18
 
@@ -229,7 +240,7 @@ def _repair_unsafe_boundaries(
     language: str,
     profile: SubtitleProfile,
 ) -> list[SubtitleCue]:
-    if language_group(language) not in {"ja", "cjk"} or len(cues) < 2:
+    if language_group(language) not in {"ja", "cjk", "ko"} or len(cues) < 2:
         return cues
 
     repaired = list(cues)
@@ -259,7 +270,7 @@ def _split_overlong_zh_cues(
     language: str,
     profile: SubtitleProfile,
 ) -> list[SubtitleCue]:
-    if language_group(language) != "cjk":
+    if language_group(language) not in {"cjk", "ko"}:
         return cues
 
     split_cues: list[SubtitleCue] = []
@@ -271,7 +282,7 @@ def _split_overlong_zh_cues(
             changed = False
             next_pending: list[SubtitleCue] = []
             for item in pending:
-                if not _should_split_zh_cue(item, next_gap, profile):
+                if not _should_split_zh_cue(item, next_gap, profile, language):
                     next_pending.append(item)
                     continue
                 moved = _split_zh_cue(item, display_text, tokens, language, profile)
@@ -287,14 +298,22 @@ def _split_overlong_zh_cues(
     return [replace(cue, index=index + 1) for index, cue in enumerate(split_cues)]
 
 
-def _should_split_zh_cue(cue: SubtitleCue, gap_after: float, profile: SubtitleProfile) -> bool:
+def _should_split_zh_cue(
+    cue: SubtitleCue,
+    gap_after: float,
+    profile: SubtitleProfile,
+    language: str,
+) -> bool:
     chars = _visible_len(cue.text)
     cps = chars / max(cue.duration, 0.1)
-    if chars > ZH_FORCE_SPLIT_CHARS:
+    force_chars = _force_split_chars(language)
+    long_chars = _long_cue_chars(language)
+    comfort_cps = _comfort_chars_per_second(language)
+    if chars > force_chars:
         return True
-    if cps > ZH_COMFORT_CPS:
+    if cps > comfort_cps:
         return True
-    if cue.duration >= profile.max_duration - 0.05 and chars > 32:
+    if cue.duration >= profile.max_duration - 0.05 and chars > max(32, int(long_chars * 0.85)):
         return True
     return gap_after > 0.8 and cue.duration >= profile.max_duration - 0.05
 
@@ -327,6 +346,8 @@ def _best_zh_split_boundary(
     best_score = float("-inf")
     min_left = max(8, int(profile.max_chars_per_line * 0.55))
     min_right = 6
+    long_chars = _long_cue_chars(language)
+    force_chars = _force_split_chars(language)
     for candidate in range(start_char + 1, end_char):
         if _is_high_risk_boundary(display_text, candidate, language):
             continue
@@ -335,12 +356,12 @@ def _best_zh_split_boundary(
         if left_chars < min_left or right_chars < min_right:
             continue
         score = _repair_candidate_score(display_text, candidate, (start_char + end_char) // 2, language)
-        score -= abs(left_chars - min(ZH_LONG_CUE_CHARS, max(24, total_visible // 2))) * 0.9
-        if left_chars > ZH_FORCE_SPLIT_CHARS:
+        score -= abs(left_chars - min(long_chars, max(24, total_visible // 2))) * 0.9
+        if left_chars > force_chars:
             score -= 60
-        if right_chars > ZH_FORCE_SPLIT_CHARS:
+        if right_chars > force_chars:
             score -= 60
-        if left_chars <= ZH_LONG_CUE_CHARS and right_chars <= ZH_LONG_CUE_CHARS:
+        if left_chars <= long_chars and right_chars <= long_chars:
             score += 18
         if score > best_score:
             best_score = score
@@ -411,7 +432,13 @@ def _find_repair_boundary(
     boundary: int,
     language: str,
 ) -> int | None:
-    scan_chars = ZH_REPAIR_SCAN_CHARS if language_group(language) == "cjk" else JA_REPAIR_SCAN_CHARS
+    group = language_group(language)
+    if group == "cjk":
+        scan_chars = ZH_REPAIR_SCAN_CHARS
+    elif group == "ko":
+        scan_chars = KO_REPAIR_SCAN_CHARS
+    else:
+        scan_chars = JA_REPAIR_SCAN_CHARS
     upper = min(cur.end_char - 1, boundary + scan_chars)
     forward = range(boundary + 1, upper + 1)
     target = _best_repair_candidate(display_text, forward, boundary, language)
@@ -453,20 +480,28 @@ def _repair_candidate_score(display_text: str, char_end: int, original_boundary:
         score += 90
     elif prev_char in MID_PUNCT:
         score += 45
-    if language_group(language) == "ja":
+    group = language_group(language)
+    if group == "ja":
         if prev_char in JA_BAD_EDGE:
             score += 12
         if next_char in JA_BAD_EDGE:
             score -= 38
         if _is_inside_unclosed_quote(display_text, char_end):
             score -= 6
-    elif language_group(language) == "cjk":
+    elif group == "cjk":
         if prev_char in ZH_BAD_EDGE:
             score -= 24
         if next_char in ZH_BAD_EDGE:
             score -= 8
         if _is_zh_quote_boundary_risk(display_text, char_end):
             score -= 90
+    elif group == "ko":
+        if _is_hangul(prev_char) and _is_hangul(next_char) and not _has_space_at_boundary(display_text, char_end):
+            score -= 70
+        if _has_space_at_boundary(display_text, char_end):
+            score += 24
+        if _is_inside_unclosed_quote(display_text, char_end):
+            score -= 6
     score -= abs(char_end - original_boundary) * 0.6
     return score
 
@@ -608,14 +643,20 @@ def _visible_len(text: str) -> int:
 
 
 def _soft_char_limit(profile: SubtitleProfile, language: str) -> int:
-    if language_group(language) == "cjk":
+    group = language_group(language)
+    if group == "cjk":
         return ZH_FORCE_SPLIT_CHARS
+    if group == "ko":
+        return KO_FORCE_SPLIT_CHARS
     return profile.max_chars_total + max(8, int(profile.max_chars_per_line * 0.6))
 
 
 def _ideal_chars(profile: SubtitleProfile, language: str) -> float:
-    if language_group(language) == "cjk":
+    group = language_group(language)
+    if group == "cjk":
         return min(profile.max_chars_total, 30)
+    if group == "ko":
+        return min(profile.max_chars_total, 34)
     return profile.max_chars_total * 0.72
 
 
@@ -625,6 +666,8 @@ def _target_chars_per_second(profile: SubtitleProfile, language: str) -> float:
         return min(profile.max_chars_per_second, 8.5)
     if group == "cjk":
         return min(profile.max_chars_per_second, ZH_COMFORT_CPS)
+    if group == "ko":
+        return min(profile.max_chars_per_second, KO_COMFORT_CPS)
     return min(profile.max_chars_per_second, 18.0)
 
 
@@ -651,6 +694,8 @@ def _boundary_score(display_text: str, char_end: int, language: str) -> float:
             score -= 28
     elif group == "cjk":
         score += _zh_boundary_score(display_text, char_end, prev_char, next_char)
+    elif group == "ko":
+        score += _ko_boundary_score(display_text, char_end, prev_char, next_char)
     return score
 
 
@@ -689,6 +734,17 @@ def _zh_boundary_score(display_text: str, char_end: int, prev_char: str, next_ch
     return score
 
 
+def _ko_boundary_score(display_text: str, char_end: int, prev_char: str, next_char: str) -> float:
+    score = 0.0
+    if _has_space_at_boundary(display_text, char_end):
+        score += 34
+    if _is_hangul(prev_char) and _is_hangul(next_char) and not _has_space_at_boundary(display_text, char_end):
+        score -= 74
+    if prev_char in OPEN_QUOTES or next_char in CLOSE_QUOTES:
+        score -= 55
+    return score
+
+
 def _is_zh_quote_boundary_risk(text: str, char_end: int) -> bool:
     prev_char = _previous_visible_char(text, char_end)
     next_char = _next_visible_char(text, char_end)
@@ -715,6 +771,10 @@ def _is_high_risk_boundary(display_text: str, char_end: int, language: str) -> b
         return _is_zh_quote_boundary_risk(display_text, char_end)
     if _is_clear_boundary(prev_char):
         return False
+    if group == "ko":
+        if prev_char in OPEN_QUOTES or next_char in CLOSE_QUOTES:
+            return True
+        return _is_hangul(prev_char) and _is_hangul(next_char) and not _has_space_at_boundary(display_text, char_end)
     if group != "ja":
         return False
     if prev_char in OPEN_QUOTES or next_char in CLOSE_QUOTES:
@@ -770,12 +830,37 @@ def _is_cjk_char(char: str) -> bool:
     return bool(ZH_CJK_RE.fullmatch(char))
 
 
+def _is_hangul(char: str) -> bool:
+    return bool(KO_HANGUL_RE.fullmatch(char))
+
+
+def _has_space_at_boundary(text: str, char_end: int) -> bool:
+    return (
+        (char_end > 0 and text[char_end - 1].isspace())
+        or (char_end < len(text) and text[char_end].isspace())
+    )
+
+
+def _long_cue_chars(language: str) -> int:
+    return KO_LONG_CUE_CHARS if language_group(language) == "ko" else ZH_LONG_CUE_CHARS
+
+
+def _force_split_chars(language: str) -> int:
+    return KO_FORCE_SPLIT_CHARS if language_group(language) == "ko" else ZH_FORCE_SPLIT_CHARS
+
+
+def _comfort_chars_per_second(language: str) -> float:
+    return KO_COMFORT_CPS if language_group(language) == "ko" else ZH_COMFORT_CPS
+
+
 def _has_bad_line_edge(text: str, language: str) -> bool:
     group = language_group(language)
     if group == "ja":
         return text[-1:] in JA_BAD_EDGE
     if group == "cjk":
         return text[-1:] in ZH_BAD_EDGE or text[-1:] in OPEN_QUOTES or text[-1:] in STRAIGHT_QUOTES
+    if group == "ko":
+        return text[-1:] in OPEN_QUOTES or text[-1:] in STRAIGHT_QUOTES
     if group == "en":
         words = re.findall(r"[A-Za-z']+", text)
         return bool(words and words[-1].lower() in EN_BAD_EDGE)

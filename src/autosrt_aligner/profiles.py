@@ -13,7 +13,7 @@ PROFILE_LABELS = {
     "slow_elder": "老年频道慢节奏朗读字幕",
 }
 
-SUPPORTED_LANGUAGES = {"zh", "zh-TW", "ja", "en"}
+SUPPORTED_LANGUAGES = {"zh", "zh-TW", "ja", "en", "ko"}
 
 
 def language_group(language: str) -> str:
@@ -23,6 +23,8 @@ def language_group(language: str) -> str:
         return "cjk"
     if language == "ja":
         return "ja"
+    if language == "ko":
+        return "ko"
     return "en"
 
 
@@ -45,6 +47,10 @@ def resolve_profile(
         base_line = 17
         base_total = 34
         cps = 12.0
+    elif group == "ko":
+        base_line = 20
+        base_total = 38
+        cps = 10.5
     else:
         base_line = 18
         base_total = 34

@@ -416,6 +416,7 @@ function languageLabel(value) {
         "zh-TW": "中文（繁体）",
         ja: "日语",
         en: "英语",
+        ko: "韩语",
     }[value] || value;
 }
 

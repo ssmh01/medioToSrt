@@ -13,7 +13,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Generate SRT/VTT from narration audio and source script.")
     parser.add_argument("--audio", required=True, help="Input audio path, e.g. input.mp3")
     parser.add_argument("--text", required=True, help="Input script txt path")
-    parser.add_argument("--language", required=True, choices=["zh", "zh-TW", "ja", "en"])
+    parser.add_argument("--language", required=True, choices=["zh", "zh-TW", "ja", "en", "ko"])
     parser.add_argument(
         "--profile",
         default="youtube_long",
