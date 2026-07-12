@@ -78,7 +78,10 @@ ZH_COMFORT_CPS = 8.5
 KO_FORCE_SPLIT_CHARS = 44
 KO_LONG_CUE_CHARS = 38
 KO_COMFORT_CPS = 9.5
+KO_REBALANCE_FAST_CPS = 13.0
+KO_REBALANCE_WINDOW_SIZE = 4
 VISUAL_GAP_TARGET_SECONDS = 0.20
+TIMING_EPSILON = 0.001
 
 
 def split_subtitles(
@@ -124,7 +127,9 @@ def split_subtitles(
     cues = _split_overlong_zh_cues(cues, display_text, tokens, language, profile)
     cues = _repair_unsafe_boundaries(cues, display_text, language, profile)
     cues = _repair_timing(cues, profile, language)
-    _annotate_warnings(cues, profile)
+    cues = _rebalance_korean_timeline(cues, display_text, language, profile)
+    cues = _repair_timing(cues, profile, language)
+    _annotate_warnings(cues, profile, language)
     if not validate_subtitle_continuity(cues, display_text):
         raise ExportValidationError("字幕正文未能连续覆盖原文，已停止导出以避免改写/漏字")
     return cues
@@ -561,6 +566,7 @@ def _smooth_timing(cues: list[SubtitleCue], profile: SubtitleProfile, language: 
     target_gap = VISUAL_GAP_TARGET_SECONDS
     min_gap = profile.gap_seconds
     target_cps = _target_chars_per_second(profile, language)
+    timing_max_duration = _timing_max_duration(profile, language)
     smoothed = list(cues)
 
     for idx in range(len(smoothed) - 1):
@@ -575,7 +581,7 @@ def _smooth_timing(cues: list[SubtitleCue], profile: SubtitleProfile, language: 
         extra_needed = max(0.0, (cur_chars / target_cps) - cur_duration)
         if extra_needed > 0:
             available_for_start = max(0.0, gap - min_gap)
-            max_duration_shift = max(0.0, profile.max_duration - cur.duration)
+            max_duration_shift = max(0.0, timing_max_duration - cur.duration)
             shift_start = min(extra_needed, available_for_start, max_duration_shift)
             if shift_start > 0:
                 cur = replace(cur, start=cur.start - shift_start)
@@ -583,21 +589,21 @@ def _smooth_timing(cues: list[SubtitleCue], profile: SubtitleProfile, language: 
                 gap = cur.start - prev.end
 
         desired_end = cur.start - target_gap
-        max_end = min(cur.start - min_gap, prev.start + profile.max_duration)
+        max_end = min(cur.start - min_gap, prev.start + timing_max_duration)
         new_end = min(desired_end, max_end)
         if new_end > prev.end:
             prev = replace(prev, end=new_end)
             smoothed[idx] = prev
             gap = cur.start - prev.end
 
-        cur = _shift_cue_start_for_gap(cur, prev.end, target_gap, min_gap, profile)
+        cur = _shift_cue_start_for_gap(cur, prev.end, target_gap, min_gap, timing_max_duration)
         smoothed[idx + 1] = cur
 
     repaired: list[SubtitleCue] = []
     for idx, cue in enumerate(smoothed):
         start = max(0.0, cue.start)
         end = max(start + 0.1, cue.end)
-        end = min(end, start + profile.max_duration)
+        end = min(end, start + timing_max_duration)
         if idx + 1 < len(smoothed):
             end = min(end, smoothed[idx + 1].start - min_gap)
         repaired.append(replace(cue, index=idx + 1, start=start, end=max(start + 0.1, end)))
@@ -609,14 +615,14 @@ def _shift_cue_start_for_gap(
     previous_end: float,
     target_gap: float,
     min_gap: float,
-    profile: SubtitleProfile,
+    timing_max_duration: float,
 ) -> SubtitleCue:
     gap = cue.start - previous_end
     if gap <= target_gap:
         return cue
 
     max_shift_by_gap = max(0.0, gap - target_gap)
-    max_shift_by_duration = max(0.0, profile.max_duration - cue.duration)
+    max_shift_by_duration = max(0.0, timing_max_duration - cue.duration)
     max_shift_by_min_gap = max(0.0, cue.start - previous_end - min_gap)
     shift = min(max_shift_by_gap, max_shift_by_duration, max_shift_by_min_gap)
     if shift <= 0:
@@ -624,11 +630,234 @@ def _shift_cue_start_for_gap(
     return replace(cue, start=cue.start - shift)
 
 
-def _annotate_warnings(cues: list[SubtitleCue], profile: SubtitleProfile) -> None:
+def _rebalance_korean_timeline(
+    cues: list[SubtitleCue],
+    display_text: str,
+    language: str,
+    profile: SubtitleProfile,
+) -> list[SubtitleCue]:
+    if language_group(language) != "ko" or len(cues) < 2:
+        return cues
+
+    rebalanced = list(cues)
+    index = 0
+    while index < len(rebalanced) - 1:
+        if not _should_rebalance_korean_cue(rebalanced[index], profile):
+            index += 1
+            continue
+
+        end_index = _korean_rebalance_window_end(rebalanced, index, profile)
+        if end_index <= index:
+            index += 1
+            continue
+
+        window = _rebalance_korean_window(rebalanced[index : end_index + 1], display_text, profile, language)
+        if window is None:
+            index += 1
+            continue
+
+        rebalanced[index : end_index + 1] = window
+        index = end_index + 1
+
+    rebalanced = _merge_short_korean_tail_cue(rebalanced, display_text, profile, language)
+    return [replace(cue, index=index + 1) for index, cue in enumerate(rebalanced)]
+
+
+def _should_rebalance_korean_cue(cue: SubtitleCue, profile: SubtitleProfile) -> bool:
+    chars = _visible_len(cue.text)
+    cps = chars / max(cue.duration, 0.1)
+    return chars >= max(24, int(profile.max_chars_total * 0.8)) and cps > KO_REBALANCE_FAST_CPS
+
+
+def _korean_rebalance_window_end(cues: list[SubtitleCue], start_index: int, profile: SubtitleProfile) -> int:
+    end_index = start_index
+    while end_index + 1 < len(cues) and end_index - start_index + 1 < KO_REBALANCE_WINDOW_SIZE:
+        total_chars = sum(_visible_len(cue.text) for cue in cues[start_index : end_index + 1])
+        total_duration = max(0.1, cues[end_index].end - cues[start_index].start)
+        if end_index > start_index and total_chars / total_duration <= KO_COMFORT_CPS * 0.85:
+            break
+
+        next_cue = cues[end_index + 1]
+        next_cps = _visible_len(next_cue.text) / max(next_cue.duration, 0.1)
+        if next_cps > KO_COMFORT_CPS and end_index > start_index:
+            break
+        end_index += 1
+
+    total_chars = sum(_visible_len(cue.text) for cue in cues[start_index : end_index + 1])
+    total_duration = max(0.1, cues[end_index].end - cues[start_index].start)
+    if end_index == start_index or total_chars / total_duration > KO_COMFORT_CPS:
+        return start_index
+    return end_index
+
+
+def _rebalance_korean_window(
+    cues: list[SubtitleCue],
+    display_text: str,
+    profile: SubtitleProfile,
+    language: str,
+) -> list[SubtitleCue] | None:
+    if len(cues) < 2:
+        return None
+
+    start_char = cues[0].start_char
+    end_char = cues[-1].end_char
+    boundaries = _balanced_korean_boundaries(display_text, start_char, end_char, len(cues), profile, language)
+    if boundaries is None:
+        return None
+
+    ranges = list(zip([start_char, *boundaries], [*boundaries, end_char]))
+    texts = [
+        wrap_subtitle_text(render_display_segment(display_text[start:end]), language, profile.max_chars_per_line)
+        for start, end in ranges
+    ]
+    if any(not text for text in texts):
+        return None
+
+    chars = [_visible_len(text) for text in texts]
+    total_chars = sum(chars)
+    if total_chars <= 0:
+        return None
+
+    min_gap = profile.gap_seconds
+    total_start = cues[0].start
+    total_end = cues[-1].end
+    available_duration = total_end - total_start - min_gap * (len(cues) - 1)
+    if available_duration <= profile.min_duration:
+        return None
+
+    durations = [available_duration * (count / total_chars) for count in chars]
+    timing_max_duration = _timing_max_duration(profile, language)
+    if any(duration < 0.9 for duration in durations):
+        return None
+    if any(duration > timing_max_duration + TIMING_EPSILON for duration in durations):
+        return None
+    if any(count / max(duration, 0.1) > profile.max_chars_per_second for count, duration in zip(chars, durations)):
+        return None
+
+    rebalanced: list[SubtitleCue] = []
+    cursor = total_start
+    for offset, ((start, end), text, duration) in enumerate(zip(ranges, texts, durations)):
+        cue_end = total_end if offset == len(cues) - 1 else cursor + duration
+        rebalanced.append(
+            replace(
+                cues[offset],
+                start=cursor,
+                end=cue_end,
+                text=text,
+                start_char=start,
+                end_char=end,
+                warnings=[],
+            )
+        )
+        cursor = cue_end + min_gap
+    return rebalanced
+
+
+def _balanced_korean_boundaries(
+    display_text: str,
+    start_char: int,
+    end_char: int,
+    count: int,
+    profile: SubtitleProfile,
+    language: str,
+) -> list[int] | None:
+    boundaries: list[int] = []
+    segment_start = start_char
+    remaining_segments = count
+    while remaining_segments > 1:
+        remaining_visible = _visible_len(display_text[segment_start:end_char])
+        target_visible = max(8, round(remaining_visible / remaining_segments))
+        boundary = _best_korean_boundary_near_visible_count(
+            display_text,
+            segment_start,
+            end_char,
+            target_visible,
+            remaining_segments - 1,
+            profile,
+            language,
+        )
+        if boundary is None:
+            return None
+        boundaries.append(boundary)
+        segment_start = boundary
+        remaining_segments -= 1
+    return boundaries
+
+
+def _best_korean_boundary_near_visible_count(
+    display_text: str,
+    start_char: int,
+    end_char: int,
+    target_visible: int,
+    remaining_segments: int,
+    profile: SubtitleProfile,
+    language: str,
+) -> int | None:
+    best_boundary: int | None = None
+    best_score = float("-inf")
+    min_left = 8
+    min_right = max(6, remaining_segments * 6)
+    for candidate in range(start_char + 1, end_char):
+        if _is_high_risk_boundary(display_text, candidate, language):
+            continue
+        left_chars = _visible_len(display_text[start_char:candidate])
+        right_chars = _visible_len(display_text[candidate:end_char])
+        if left_chars < min_left or right_chars < min_right:
+            continue
+
+        score = _repair_candidate_score(display_text, candidate, start_char + target_visible, language)
+        score -= abs(left_chars - target_visible) * 2.6
+        if left_chars > profile.max_chars_total:
+            score -= (left_chars - profile.max_chars_total) * 3.0
+        if right_chars > remaining_segments * profile.max_chars_total:
+            score -= 35
+        if _previous_visible_char(display_text, candidate) in STRONG_PUNCT:
+            score += 30
+        if score > best_score:
+            best_score = score
+            best_boundary = candidate
+    return best_boundary
+
+
+def _merge_short_korean_tail_cue(
+    cues: list[SubtitleCue],
+    display_text: str,
+    profile: SubtitleProfile,
+    language: str,
+) -> list[SubtitleCue]:
+    if len(cues) < 2:
+        return cues
+
+    last = cues[-1]
+    prev = cues[-2]
+    if last.duration >= profile.min_duration:
+        return cues
+
+    merged_text = wrap_subtitle_text(
+        render_display_segment(display_text[prev.start_char : last.end_char]),
+        language,
+        profile.max_chars_per_line,
+    )
+    merged_chars = _visible_len(merged_text)
+    merged_duration = last.end - prev.start
+    if (
+        not merged_text
+        or merged_duration > _timing_max_duration(profile, language) + TIMING_EPSILON
+        or merged_chars > profile.max_chars_total
+        or merged_chars / max(merged_duration, 0.1) > profile.max_chars_per_second
+    ):
+        return cues
+
+    merged = replace(prev, end=last.end, text=merged_text, end_char=last.end_char, warnings=[])
+    return [*cues[:-2], merged]
+
+
+def _annotate_warnings(cues: list[SubtitleCue], profile: SubtitleProfile, language: str) -> None:
+    timing_max_duration = _timing_max_duration(profile, language)
     for index, cue in enumerate(cues):
         if cue.duration < profile.min_duration:
             cue.warnings.append("too_short")
-        if cue.duration > profile.max_duration:
+        if cue.duration > timing_max_duration + TIMING_EPSILON:
             cue.warnings.append("too_long")
         if _visible_len(cue.text) / max(cue.duration, 0.1) > profile.max_chars_per_second:
             cue.warnings.append("fast_reading")
@@ -669,6 +898,12 @@ def _target_chars_per_second(profile: SubtitleProfile, language: str) -> float:
     if group == "ko":
         return min(profile.max_chars_per_second, KO_COMFORT_CPS)
     return min(profile.max_chars_per_second, 18.0)
+
+
+def _timing_max_duration(profile: SubtitleProfile, language: str) -> float:
+    if language_group(language) == "ko" and profile.max_duration < 5.8:
+        return min(5.8, profile.max_duration + 1.8)
+    return profile.max_duration
 
 
 def _boundary_score(display_text: str, char_end: int, language: str) -> float:

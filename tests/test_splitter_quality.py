@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 from autosrt_aligner.models import AlignmentToken, SubtitleCue
 from autosrt_aligner.profiles import resolve_profile
 from autosrt_aligner.quality import build_quality_report
-from autosrt_aligner.splitter import _smooth_timing, split_subtitles, wrap_subtitle_text
+from autosrt_aligner.splitter import _rebalance_korean_timeline, _smooth_timing, split_subtitles, wrap_subtitle_text
 from autosrt_aligner.text import validate_subtitle_continuity
 
 
@@ -134,6 +134,70 @@ class SplitterQualityTests(unittest.TestCase):
         self.assertLessEqual(gap, 0.201)
         self.assertLessEqual(smoothed[1].duration, profile.max_duration)
         self.assertLessEqual(smoothed[0].end, smoothed[1].start)
+
+    def test_korean_timing_smoothing_uses_soft_max_to_reduce_stranded_gap(self):
+        profile = resolve_profile("youtube_long", "ko", min_duration=1.2, max_duration=4.0, max_chars_per_line=20)
+        cues = [
+            SubtitleCue(
+                1,
+                83.46,
+                87.46,
+                "그날 밤 저는 잠이 안 와서 장판 밑에 깔아 둔 봉투를 꺼냈습니다. 고무줄로 감아 둔 꼬깃꼬깃한 지폐를 침",
+                0,
+                42,
+            ),
+            SubtitleCue(2, 91.28, 93.46, "발라 가며 세고 또 셌지요.", 42, 53),
+        ]
+        smoothed = _smooth_timing(cues, profile, "ko")
+        gap = smoothed[1].start - smoothed[0].end
+        self.assertLessEqual(gap, 0.201)
+        self.assertLessEqual(smoothed[0].end, smoothed[1].start)
+        report = build_quality_report(
+            smoothed,
+            "그날 밤 저는 잠이 안 와서 장판 밑에 깔아 둔 봉투를 꺼냈습니다. 고무줄로 감아 둔 꼬깃꼬깃한 지폐를 침발라 가며 세고 또 셌지요.",
+            smoothed[-1].end,
+            profile,
+            "ko",
+        )
+        self.assertEqual(report["large_gap_count"], 0)
+        self.assertEqual(report["too_long_count"], 0)
+
+    def test_korean_rebalances_severe_fast_cue_with_slow_neighbors(self):
+        profile = resolve_profile("youtube_long", "ko", min_duration=1.2, max_duration=4.0, max_chars_per_line=20)
+        parts = [
+            "지갑을 두고 왔다는 사람 눈이 왜 그렇게 절박했을까요. 저부터도 부조 봉투 앞에선 오만 원이냐 십만 원이냐",
+            "한나절을",
+            "망설이는 처지라,",
+        ]
+        text = " ".join(parts)
+        first_end = len(parts[0])
+        second_start = first_end + 1
+        second_end = second_start + len(parts[1])
+        third_start = second_end + 1
+        cues = [
+            SubtitleCue(1, 600.945, 602.485, parts[0], 0, first_end),
+            SubtitleCue(2, 602.685, 604.806, parts[1], second_start, second_end),
+            SubtitleCue(3, 604.886, 609.208, parts[2], third_start, len(text)),
+        ]
+        rebalanced = _rebalance_korean_timeline(cues, text, "ko", profile)
+        report = build_quality_report(rebalanced, text, rebalanced[-1].end, profile, "ko")
+        self.assertEqual(len(rebalanced), 3)
+        self.assertTrue(validate_subtitle_continuity(rebalanced, text))
+        self.assertEqual(report["ko_fast_cue_count"], 0)
+        self.assertEqual(report["ko_unsafe_boundary_count"], 0)
+
+    def test_korean_merges_short_tail_cue_when_safe(self):
+        profile = resolve_profile("youtube_long", "ko", min_duration=1.2, max_duration=4.0, max_chars_per_line=20)
+        text = "찾아뵙겠습니다. 늘 건강하십시오."
+        split_at = text.index("건강")
+        cues = [
+            SubtitleCue(1, 1546.88, 1548.98, text[:split_at].strip(), 0, split_at),
+            SubtitleCue(2, 1549.06, 1549.51, text[split_at:], split_at, len(text)),
+        ]
+        rebalanced = _rebalance_korean_timeline(cues, text, "ko", profile)
+        self.assertEqual(len(rebalanced), 1)
+        self.assertEqual(rebalanced[0].text, text)
+        self.assertTrue(validate_subtitle_continuity(rebalanced, text))
 
     def test_quality_report_counts_problems(self):
         profile = resolve_profile("standard", "zh", min_duration=1.0, max_duration=2.0, max_chars_per_line=6)

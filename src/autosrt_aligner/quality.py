@@ -6,7 +6,7 @@ from typing import Any
 
 from .models import SubtitleCue, SubtitleProfile
 from .profiles import language_group
-from .splitter import _is_high_risk_boundary
+from .splitter import TIMING_EPSILON, _is_high_risk_boundary, _timing_max_duration
 from .text import unaligned_text_ratio
 
 ZH_LONG_CUE_CHARS = 34
@@ -28,10 +28,11 @@ def build_quality_report(
     cps_values = [_chars(cue.text) / max(cue.duration, 0.1) for cue in cues]
     cue_lengths = [_chars(cue.text) for cue in cues]
     gaps = [cur.start - prev.end for prev, cur in zip(cues, cues[1:])]
+    timing_max_duration = _timing_max_duration(profile, language)
 
     overlap_count = sum(1 for prev, cur in zip(cues, cues[1:]) if cur.start < prev.end)
     too_short_count = sum(1 for cue in cues if cue.duration < profile.min_duration)
-    too_long_count = sum(1 for cue in cues if cue.duration > profile.max_duration)
+    too_long_count = sum(1 for cue in cues if cue.duration > timing_max_duration + TIMING_EPSILON)
     empty_count = sum(1 for cue in cues if not cue.text.strip())
     large_gap_count = sum(1 for gap in gaps if gap > 0.8)
     weak_boundary_count = _weak_boundary_count(cues, display_text, language)
