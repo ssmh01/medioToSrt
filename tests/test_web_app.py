@@ -95,6 +95,16 @@ class WebAppTests(unittest.TestCase):
         self.assertIn("ko", payload["languages"])
         self.assertNotIn("language", payload["defaults"])
         self.assertEqual(payload["defaults"]["subtitle_profile"], "youtube_long")
+        self.assertEqual(
+            payload["language_defaults"],
+            {
+                "zh": {"min_duration": 1.2, "max_duration": 6.5, "max_chars_per_line": 18},
+                "zh-TW": {"min_duration": 1.2, "max_duration": 6.5, "max_chars_per_line": 18},
+                "ja": {"min_duration": 1.2, "max_duration": 6.5, "max_chars_per_line": 17},
+                "en": {"min_duration": 1.2, "max_duration": 6.0, "max_chars_per_line": 42},
+                "ko": {"min_duration": 1.2, "max_duration": 6.5, "max_chars_per_line": 20},
+            },
+        )
 
     def test_create_job_requires_language(self):
         response = self.client.post(

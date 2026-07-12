@@ -129,6 +129,8 @@ def split_subtitles(
     cues = _repair_timing(cues, profile, language)
     cues = _rebalance_korean_timeline(cues, display_text, language, profile)
     cues = _repair_timing(cues, profile, language)
+    cues = _merge_short_english_cues(cues, display_text, language, profile)
+    cues = _repair_timing(cues, profile, language)
     _annotate_warnings(cues, profile, language)
     if not validate_subtitle_continuity(cues, display_text):
         raise ExportValidationError("字幕正文未能连续覆盖原文，已停止导出以避免改写/漏字")
@@ -245,7 +247,7 @@ def _repair_unsafe_boundaries(
     language: str,
     profile: SubtitleProfile,
 ) -> list[SubtitleCue]:
-    if language_group(language) not in {"ja", "cjk", "ko"} or len(cues) < 2:
+    if language_group(language) not in {"ja", "cjk", "ko", "en"} or len(cues) < 2:
         return cues
 
     repaired = list(cues)
@@ -507,6 +509,11 @@ def _repair_candidate_score(display_text: str, char_end: int, original_boundary:
             score += 24
         if _is_inside_unclosed_quote(display_text, char_end):
             score -= 6
+    elif group == "en":
+        if _has_space_at_boundary(display_text, char_end):
+            score += 34
+        if _is_english_word_internal_boundary(display_text, char_end):
+            score -= 90
     score -= abs(char_end - original_boundary) * 0.6
     return score
 
@@ -852,6 +859,45 @@ def _merge_short_korean_tail_cue(
     return [*cues[:-2], merged]
 
 
+def _merge_short_english_cues(
+    cues: list[SubtitleCue],
+    display_text: str,
+    language: str,
+    profile: SubtitleProfile,
+) -> list[SubtitleCue]:
+    if language_group(language) != "en" or len(cues) < 2:
+        return cues
+
+    merged = list(cues)
+    index = len(merged) - 1
+    while index > 0:
+        cue = merged[index]
+        if cue.duration >= profile.min_duration:
+            index -= 1
+            continue
+
+        prev = merged[index - 1]
+        merged_text = wrap_subtitle_text(
+            render_display_segment(display_text[prev.start_char : cue.end_char]),
+            language,
+            profile.max_chars_per_line,
+        )
+        merged_duration = cue.end - prev.start
+        merged_chars = _visible_len(merged_text)
+        if (
+            merged_text
+            and merged_duration <= _timing_max_duration(profile, language) + TIMING_EPSILON
+            and merged_chars <= profile.max_chars_total
+            and merged_chars / max(merged_duration, 0.1) <= profile.max_chars_per_second
+        ):
+            merged[index - 1 : index + 1] = [
+                replace(prev, end=cue.end, text=merged_text, end_char=cue.end_char, warnings=[])
+            ]
+        index -= 1
+
+    return [replace(cue, index=index + 1) for index, cue in enumerate(merged)]
+
+
 def _annotate_warnings(cues: list[SubtitleCue], profile: SubtitleProfile, language: str) -> None:
     timing_max_duration = _timing_max_duration(profile, language)
     for index, cue in enumerate(cues):
@@ -931,6 +977,11 @@ def _boundary_score(display_text: str, char_end: int, language: str) -> float:
         score += _zh_boundary_score(display_text, char_end, prev_char, next_char)
     elif group == "ko":
         score += _ko_boundary_score(display_text, char_end, prev_char, next_char)
+    elif group == "en":
+        if _has_space_at_boundary(display_text, char_end):
+            score += 34
+        if _is_english_word_internal_boundary(display_text, char_end):
+            score -= 90
     return score
 
 
@@ -1010,6 +1061,8 @@ def _is_high_risk_boundary(display_text: str, char_end: int, language: str) -> b
         if prev_char in OPEN_QUOTES or next_char in CLOSE_QUOTES:
             return True
         return _is_hangul(prev_char) and _is_hangul(next_char) and not _has_space_at_boundary(display_text, char_end)
+    if group == "en":
+        return _is_english_word_internal_boundary(display_text, char_end)
     if group != "ja":
         return False
     if prev_char in OPEN_QUOTES or next_char in CLOSE_QUOTES:
@@ -1074,6 +1127,17 @@ def _has_space_at_boundary(text: str, char_end: int) -> bool:
         (char_end > 0 and text[char_end - 1].isspace())
         or (char_end < len(text) and text[char_end].isspace())
     )
+
+
+def _is_english_word_internal_boundary(text: str, char_end: int) -> bool:
+    if char_end <= 0 or char_end >= len(text) or _has_space_at_boundary(text, char_end):
+        return False
+    prev_char = text[char_end - 1]
+    next_char = text[char_end]
+    word_chars = set("'-’")
+    prev_is_word = (prev_char.isascii() and prev_char.isalnum()) or prev_char in word_chars
+    next_is_word = (next_char.isascii() and next_char.isalnum()) or next_char in word_chars
+    return prev_is_word and next_is_word
 
 
 def _long_cue_chars(language: str) -> int:

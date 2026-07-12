@@ -110,6 +110,33 @@ class SplitterQualityTests(unittest.TestCase):
         for phrase in ["어머니는", "괜찮다고", "생각했습니다"]:
             assert_not_split_inside(self, text, cues, phrase)
 
+    def test_english_splitter_never_splits_inside_words_or_contractions(self):
+        text = (
+            "There's a voicemail from a seventy-four-year-old man, and I've played it four times. "
+            "Somebody comes chasing after you because a widow's porch doesn't get much traffic."
+        )
+        profile = resolve_profile("youtube_long", "en", min_duration=1.2, max_duration=6.0, max_chars_per_line=42)
+        cues = split_subtitles(text, char_tokens(text, step=0.055), "en", profile)
+        self.assertTrue(validate_subtitle_continuity(cues, text))
+        for cue in cues[:-1]:
+            self.assertFalse(
+                text[cue.end_char - 1 : cue.end_char].isalnum()
+                and text[cue.end_char : cue.end_char + 1].isalnum(),
+                f"split inside English word at {cue.end_char}",
+            )
+        for phrase in ["There's", "seventy-four-year-old", "Somebody", "chasing", "widow's", "doesn't"]:
+            assert_not_split_inside(self, text, cues, phrase)
+
+    def test_english_splitter_merges_single_letter_tail(self):
+        text = "Goodnight, friends. Leave the light on"
+        tokens = char_tokens(text, step=0.08)
+        tokens[-1] = AlignmentToken("n", 2.92, 3.02, len(text) - 1, len(text))
+        profile = resolve_profile("youtube_long", "en", min_duration=1.2, max_duration=6.0, max_chars_per_line=42)
+        cues = split_subtitles(text, tokens, "en", profile)
+        self.assertTrue(validate_subtitle_continuity(cues, text))
+        self.assertNotEqual(cues[-1].text, "n")
+        self.assertGreaterEqual(cues[-1].duration, profile.min_duration)
+
     def test_timing_smoothing_reduces_large_gap_and_fast_cue(self):
         profile = resolve_profile("youtube_long", "ja", min_duration=1.2, max_duration=6.5, max_chars_per_line=18)
         cues = [

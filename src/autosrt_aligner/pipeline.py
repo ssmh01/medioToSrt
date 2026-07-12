@@ -133,20 +133,24 @@ def run_alignment_job(
         )
     cues = split_subtitles(cleaned.display_text, mapped_tokens, language, profile)
     pre_repair_cue_diagnostics = _cue_timeline_diagnostics(cues, cleaned.display_text, profile, language)
-    mapped_tokens, cue_risk_repaired = _repair_cue_risks_with_local_realign(
-        mapped_tokens,
-        cues,
-        cleaned.display_text,
-        engine,
-        align_audio_path,
-        work_dir,
-        language,
-        audio_duration,
-        profile,
-        logs,
-        timeline_summary,
-    )
-    if cue_risk_repaired:
+    cue_risk_repaired = False
+    for cue_repair_pass in range(3):
+        mapped_tokens, pass_repaired = _repair_cue_risks_with_local_realign(
+            mapped_tokens,
+            cues,
+            cleaned.display_text,
+            engine,
+            align_audio_path,
+            work_dir,
+            language,
+            audio_duration,
+            profile,
+            logs,
+            timeline_summary,
+        )
+        if not pass_repaired:
+            break
+        cue_risk_repaired = True
         post_repair_token_diagnostics = _token_timeline_diagnostics(
             mapped_tokens,
             cleaned.display_text,
@@ -154,6 +158,16 @@ def run_alignment_job(
             profile,
         )
         cues = split_subtitles(cleaned.display_text, mapped_tokens, language, profile)
+        remaining_cue_risks = _detect_cue_timeline_ranges(
+            cues,
+            cleaned.display_text,
+            audio_duration,
+            profile,
+            language,
+        )
+        if not any(range_.severity == "high" for range_ in remaining_cue_risks):
+            break
+        logs.append(f"第 {cue_repair_pass + 1} 轮后仍有高风险 cue，继续局部重对齐")
     mapped_tokens, micro_drift_repaired = _repair_micro_drifts_with_local_realign(
         mapped_tokens,
         cues,
@@ -1654,7 +1668,7 @@ def _detect_cue_timeline_ranges(
     language: str,
 ) -> list[TimelineRange]:
     group = language_group(language)
-    if group not in {"cjk", "ko"} or len(cues) < 2:
+    if group not in {"cjk", "ko", "en"} or len(cues) < 2:
         return []
 
     raw_ranges: list[tuple[int, int, list[str], str]] = []
@@ -1682,7 +1696,12 @@ def _detect_cue_timeline_ranges(
             if cps > severe_fast_cps:
                 severity = "high"
         if next_cue and _is_high_risk_boundary(display_text, cue.end_char, language):
-            reasons.append("zh_quote_boundary" if group == "cjk" else "ko_unsafe_boundary")
+            if group == "cjk":
+                reasons.append("zh_quote_boundary")
+            elif group == "ko":
+                reasons.append("ko_unsafe_boundary")
+            else:
+                reasons.append("en_word_boundary")
         if _is_dense_maxed_duration_cluster(cues, index, profile, language):
             reasons.append(f"{prefix}_maxed_duration_cluster")
 
@@ -1693,6 +1712,7 @@ def _detect_cue_timeline_ranges(
         raw_ranges.append((start_index, end_index, sorted(set(reasons)), severity))
 
     merged = _merge_zh_cue_ranges(cues, raw_ranges, audio_duration)
+    merged.sort(key=lambda range_: (0 if range_.severity == "high" else 1, range_.audio_start))
     for index, range_ in enumerate(merged, start=1):
         range_.index = index
     return merged[:4]
@@ -1759,7 +1779,12 @@ def _merge_zh_cue_ranges(
 
 
 def _cue_risk_prefix(language: str) -> str:
-    return "ko" if language_group(language) == "ko" else "zh"
+    group = language_group(language)
+    if group == "ko":
+        return "ko"
+    if group == "en":
+        return "en"
+    return "zh"
 
 
 def _cue_risk_mode(language: str, suffix: str) -> str:
@@ -1767,19 +1792,39 @@ def _cue_risk_mode(language: str, suffix: str) -> str:
 
 
 def _cue_risk_long_chars(language: str) -> int:
-    return 38 if language_group(language) == "ko" else 34
+    group = language_group(language)
+    if group == "ko":
+        return 38
+    if group == "en":
+        return 84
+    return 34
 
 
 def _cue_risk_cluster_chars(language: str) -> int:
-    return 34 if language_group(language) == "ko" else 30
+    group = language_group(language)
+    if group == "ko":
+        return 34
+    if group == "en":
+        return 68
+    return 30
 
 
 def _cue_risk_fast_cps(language: str) -> float:
-    return 9.5 if language_group(language) == "ko" else 8.5
+    group = language_group(language)
+    if group == "ko":
+        return 9.5
+    if group == "en":
+        return 20.0
+    return 8.5
 
 
 def _cue_risk_severe_fast_cps(language: str) -> float:
-    return 10.5 if language_group(language) == "ko" else 9.5
+    group = language_group(language)
+    if group == "ko":
+        return 10.5
+    if group == "en":
+        return 28.0
+    return 9.5
 
 
 def _append_low_confidence_range(summary: TimelineRepairSummary, range_: TimelineRange, mode: str) -> None:

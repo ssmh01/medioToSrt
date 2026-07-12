@@ -11,6 +11,7 @@ from autosrt_aligner.pipeline import (
     TimelineRepairSummary,
     _apply_timeline_quality,
     _checkpoint_drift_severity,
+    _detect_cue_timeline_ranges,
     _detect_zh_cue_timeline_ranges,
     _micro_repair_improves,
     _repair_checkpoint_drifts_with_local_realign,
@@ -452,6 +453,46 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(report["timeline_status"], "needs_review")
         self.assertLessEqual(report["quality_score"], 75)
         self.assertGreater(len(report["low_confidence_ranges"]), 0)
+
+    def test_english_fast_cluster_is_sent_to_local_realign(self):
+        parts = [
+            "Returning a dish is the oldest opening move there is.",
+            "I let him in anyway because a widow's porch doesn't get much traffic.",
+            "He fixed the storm door before his coffee went cold.",
+        ]
+        text = " ".join(parts)
+        starts = [0, len(parts[0]) + 1, len(parts[0]) + len(parts[1]) + 2]
+        cues = [
+            SubtitleCue(1, 589.0, 590.2, parts[0], starts[0], starts[1] - 1),
+            SubtitleCue(2, 590.28, 591.78, parts[1], starts[1], starts[2] - 1),
+            SubtitleCue(3, 591.86, 593.0, parts[2], starts[2], len(text)),
+        ]
+        profile = resolve_profile("youtube_long", "en", min_duration=1.2, max_duration=6.0, max_chars_per_line=42)
+        ranges = _detect_cue_timeline_ranges(cues, text, 600.0, profile, "en")
+        self.assertTrue(ranges)
+        self.assertTrue(any("en_fast_cue" in range_.reasons for range_ in ranges))
+        self.assertTrue(any(range_.severity == "high" for range_ in ranges))
+
+    def test_english_cue_risk_limit_prioritizes_later_high_risk_range(self):
+        parts = ["steady readable subtitle text" for _ in range(12)]
+        parts[10] = "This later subtitle contains enough text to be an extremely compressed English cue"
+        text = " ".join(parts)
+        cues = []
+        char_start = 0
+        cursor = 0.0
+        for index, part in enumerate(parts):
+            char_end = char_start + len(part)
+            duration = 0.9 if index == 10 else 1.5
+            cues.append(SubtitleCue(index + 1, cursor, cursor + duration, part, char_start, char_end))
+            cursor += duration + (0.9 if index < 8 else 0.08)
+            char_start = char_end + 1
+
+        profile = resolve_profile("youtube_long", "en", min_duration=1.2, max_duration=6.0, max_chars_per_line=42)
+        ranges = _detect_cue_timeline_ranges(cues, text, cursor, profile, "en")
+        self.assertLessEqual(len(ranges), 4)
+        self.assertEqual(ranges[0].severity, "high")
+        self.assertIn("en_fast_cue", ranges[0].reasons)
+        self.assertGreaterEqual(ranges[0].start_char, cues[9].start_char)
 
     def test_checkpoint_drift_repairs_silent_timeline_shift(self):
         text = zh_checkpoint_text()

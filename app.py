@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 
 from autosrt_aligner.errors import AutosrtError, InputError
 from autosrt_aligner.pipeline import run_alignment_job
-from autosrt_aligner.profiles import PROFILE_LABELS, SUPPORTED_LANGUAGES
+from autosrt_aligner.profiles import PROFILE_LABELS, SUPPORTED_LANGUAGES, resolve_profile
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -64,12 +64,24 @@ def index_head() -> FileResponse:
 
 @app.get("/api/options")
 def api_options() -> dict[str, Any]:
+    language_defaults = {
+        language: {
+            "min_duration": profile.min_duration,
+            "max_duration": profile.max_duration,
+            "max_chars_per_line": profile.max_chars_per_line,
+        }
+        for language in LANGUAGES
+        if language in SUPPORTED_LANGUAGES
+        for profile in [resolve_profile("youtube_long", language)]
+    }
+    language_defaults["en"]["max_duration"] = 6.0
     return {
         "languages": [value for value in LANGUAGES if value in SUPPORTED_LANGUAGES],
         "profiles": [
             {"key": key, "label": label}
             for key, label in PROFILE_LABELS.items()
         ],
+        "language_defaults": language_defaults,
         "defaults": {
             "subtitle_profile": "youtube_long",
             "min_duration": 1.2,

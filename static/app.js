@@ -3,6 +3,7 @@ const state = {
     pollTimer: null,
     startedAt: null,
     logs: [],
+    languageDefaults: {},
 };
 
 const nodes = {
@@ -46,6 +47,7 @@ async function init() {
 
 function bindEvents() {
     nodes.form.addEventListener("submit", submitJob);
+    nodes.languageSelect.addEventListener("change", applyLanguageDefaults);
     nodes.scriptText.addEventListener("input", () => {
         nodes.textCount.textContent = String(nodes.scriptText.value.trim().length);
     });
@@ -72,6 +74,7 @@ async function loadOptions() {
     const response = await fetch("/api/options");
     const data = await response.json();
     const languages = data.languages.filter((value) => value !== "auto");
+    state.languageDefaults = data.language_defaults || {};
     nodes.languageSelect.innerHTML = '<option value="" selected disabled>请选择语言</option>' + languages
         .map((value) => `<option value="${escapeAttr(value)}">${languageLabel(value)}</option>`)
         .join("");
@@ -85,6 +88,16 @@ async function loadOptions() {
     nodes.maxChars.value = data.defaults.max_chars_per_line;
     nodes.generateVtt.checked = data.defaults.generate_vtt;
     nodes.preservePunctuation.checked = data.defaults.preserve_punctuation;
+}
+
+function applyLanguageDefaults() {
+    const defaults = state.languageDefaults[nodes.languageSelect.value];
+    if (!defaults) {
+        return;
+    }
+    nodes.minDuration.value = defaults.min_duration;
+    nodes.maxDuration.value = defaults.max_duration;
+    nodes.maxChars.value = defaults.max_chars_per_line;
 }
 
 function setupUploadCard(inputId, cardId, emptyId, chosenId, nameId, metaId) {
