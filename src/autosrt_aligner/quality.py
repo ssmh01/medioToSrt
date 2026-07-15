@@ -6,15 +6,20 @@ from typing import Any
 
 from .models import SubtitleCue, SubtitleProfile
 from .profiles import language_group
-from .splitter import TIMING_EPSILON, _is_high_risk_boundary, _timing_max_duration
+from .splitter import (
+    KO_COMFORT_CPS,
+    KO_SEVERE_FAST_CPS,
+    TIMING_EPSILON,
+    _is_high_risk_boundary,
+    _timing_max_duration,
+)
 from .text import unaligned_text_ratio
 
 ZH_LONG_CUE_CHARS = 34
 ZH_FAST_CPS = 8.5
 ZH_SEVERE_FAST_CPS = 9.5
 KO_LONG_CUE_CHARS = 38
-KO_FAST_CPS = 9.5
-KO_SEVERE_FAST_CPS = 10.5
+KO_FAST_CPS = KO_COMFORT_CPS
 
 
 def build_quality_report(

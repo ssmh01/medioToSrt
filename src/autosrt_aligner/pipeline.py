@@ -16,7 +16,12 @@ from .formats import export_srt, export_vtt
 from .models import AlignmentToken, JobResult, SubtitleCue
 from .profiles import language_group, resolve_profile
 from .quality import build_quality_report
-from .splitter import VISUAL_GAP_TARGET_SECONDS, _is_high_risk_boundary, split_subtitles
+from .splitter import (
+    VISUAL_GAP_TARGET_SECONDS,
+    _finalize_korean_cues,
+    _is_high_risk_boundary,
+    split_subtitles,
+)
 from .text import clean_script_text, map_tokens_to_display
 
 CHECKPOINT_MIN_VISIBLE_CHARS = 240
@@ -198,6 +203,10 @@ def run_alignment_job(
         audio_duration,
         logs,
     )
+    finalized_cues = _finalize_korean_cues(cues, cleaned.display_text, language, profile)
+    if finalized_cues != cues:
+        logs.append("已完成韩语最终 cue 级质量收口")
+        cues = finalized_cues
     quality_report = build_quality_report(cues, cleaned.display_text, audio_duration, profile, language)
     if timeline_repair is not None:
         timeline_summary.register_fallback(timeline_repair)

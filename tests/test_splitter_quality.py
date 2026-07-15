@@ -7,7 +7,13 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 from autosrt_aligner.models import AlignmentToken, SubtitleCue
 from autosrt_aligner.profiles import resolve_profile
 from autosrt_aligner.quality import build_quality_report
-from autosrt_aligner.splitter import _rebalance_korean_timeline, _smooth_timing, split_subtitles, wrap_subtitle_text
+from autosrt_aligner.splitter import (
+    _finalize_korean_cues,
+    _rebalance_korean_timeline,
+    _smooth_timing,
+    split_subtitles,
+    wrap_subtitle_text,
+)
 from autosrt_aligner.text import validate_subtitle_continuity
 
 
@@ -26,6 +32,18 @@ def assert_not_split_inside(test_case: unittest.TestCase, text: str, cues: list[
     protected = set(range(start + 1, start + len(phrase)))
     boundaries = {cue.end_char for cue in cues[:-1]}
     test_case.assertFalse(boundaries & protected, f"split inside {phrase!r}")
+
+
+def cues_for_parts(parts: list[str], times: list[tuple[float, float]]) -> tuple[str, list[SubtitleCue]]:
+    text = " ".join(parts)
+    cues = []
+    cursor = 0
+    for index, (part, (start, end)) in enumerate(zip(parts, times), start=1):
+        char_start = text.index(part, cursor)
+        char_end = char_start + len(part)
+        cues.append(SubtitleCue(index, start, end, part, char_start, char_end))
+        cursor = char_end
+    return text, cues
 
 
 class SplitterQualityTests(unittest.TestCase):
@@ -212,6 +230,110 @@ class SplitterQualityTests(unittest.TestCase):
         self.assertTrue(validate_subtitle_continuity(rebalanced, text))
         self.assertEqual(report["ko_fast_cue_count"], 0)
         self.assertEqual(report["ko_unsafe_boundary_count"], 0)
+
+    def test_korean_rebalances_short_fast_run_with_bidirectional_window(self):
+        profile = resolve_profile("youtube_long", "ko", min_duration=1.2, max_duration=4.0, max_chars_per_line=20)
+        parts = [
+            "천천히 이야기를 시작했습니다",
+            "갑자기 문이 열렸고",
+            "모두 자리에서 일어나",
+            "밖을 바라보았습니다",
+            "잠시 뒤 다시 조용해졌습니다",
+        ]
+        text, cues = cues_for_parts(
+            parts,
+            [(0.0, 2.0), (2.08, 2.68), (2.76, 3.21), (3.29, 3.89), (3.97, 7.2)],
+        )
+
+        rebalanced = _rebalance_korean_timeline(cues, text, "ko", profile)
+
+        self.assertEqual(rebalanced[0].start, cues[0].start)
+        self.assertEqual(rebalanced[-1].end, cues[-1].end)
+        self.assertTrue(validate_subtitle_continuity(rebalanced, text))
+        self.assertTrue(all(cue.duration + 0.001 >= profile.min_duration for cue in rebalanced))
+        self.assertTrue(all(len("".join(cue.text.split())) / cue.duration <= 9.5 for cue in rebalanced))
+        self.assertTrue(all("\n" not in cue.text for cue in rebalanced))
+
+    def test_korean_rebalance_prefers_neighbor_with_more_timing_slack(self):
+        profile = resolve_profile("youtube_long", "ko", min_duration=1.2, max_duration=4.0, max_chars_per_line=20)
+        parts = [
+            "아버지는 천천히 고개를 끄덕였습니다",
+            "그 말을 모두에게 전했습니다",
+            "사람들은 잠시 조용히 기다렸습니다",
+        ]
+        text, cues = cues_for_parts(parts, [(0.0, 3.0), (3.08, 3.68), (3.76, 5.96)])
+
+        rebalanced = _rebalance_korean_timeline(cues, text, "ko", profile)
+
+        self.assertNotEqual(rebalanced[0].end, cues[0].end)
+        self.assertEqual(rebalanced[2], cues[2])
+        self.assertTrue(validate_subtitle_continuity(rebalanced, text))
+
+    def test_korean_rebalance_does_not_cross_real_pause(self):
+        profile = resolve_profile("youtube_long", "ko", min_duration=1.2, max_duration=4.0, max_chars_per_line=20)
+        parts = ["천천히 설명을 이어갔습니다", "갑자기 모두 일어났습니다", "다시 자리에 앉았습니다"]
+        text, cues = cues_for_parts(parts, [(0.0, 3.0), (3.5, 4.1), (4.6, 7.6)])
+
+        rebalanced = _rebalance_korean_timeline(cues, text, "ko", profile)
+
+        self.assertEqual(rebalanced, cues)
+
+    def test_korean_rebalance_leaves_unfixable_fast_run_for_quality_review(self):
+        profile = resolve_profile("youtube_long", "ko", min_duration=1.2, max_duration=4.0, max_chars_per_line=20)
+        parts = [
+            "첫 번째 이야기가 빠르게 이어졌습니다",
+            "두 번째 설명도 빠르게 지나갔습니다",
+            "세 번째 결론까지 곧바로 이어졌습니다",
+        ]
+        text, cues = cues_for_parts(parts, [(0.0, 0.8), (0.88, 1.68), (1.76, 2.56)])
+
+        rebalanced = _rebalance_korean_timeline(cues, text, "ko", profile)
+        report = build_quality_report(rebalanced, text, rebalanced[-1].end, profile, "ko")
+
+        self.assertEqual(rebalanced, cues)
+        self.assertGreater(report["ko_fast_cue_count"], 0)
+        self.assertGreater(report["ko_timeline_risk_count"], 0)
+
+    def test_korean_rebalance_does_not_change_other_languages(self):
+        profile = resolve_profile("youtube_long", "zh", min_duration=1.2, max_duration=4.0, max_chars_per_line=18)
+        text, cues = cues_for_parts(["第一条字幕很快", "第二条字幕很慢"], [(0.0, 0.4), (0.48, 3.0)])
+
+        self.assertEqual(_rebalance_korean_timeline(cues, text, "zh", profile), cues)
+
+    def test_korean_finalizer_splits_long_fast_cues_after_local_realign(self):
+        profile = resolve_profile("youtube_long", "ko", min_duration=1.2, max_duration=6.5, max_chars_per_line=20)
+        parts = [
+            "오래된 서랍을 열어 보니 가족사진과 편지가 가득했고 지난 세월이 얼마나 빨리 흘렀는지 깨달았습니다,",
+            "옆에 있던 동생은 말없이 사진을 정리하며 천천히 고개를 끄덕였습니다",
+        ]
+        text, cues = cues_for_parts(parts, [(260.353, 263.873), (263.953, 269.753)])
+
+        finalized = _finalize_korean_cues(cues, text, "ko", profile)
+        report = build_quality_report(finalized, text, finalized[-1].end, profile, "ko")
+
+        self.assertTrue(validate_subtitle_continuity(finalized, text))
+        self.assertTrue(all(cue.duration + 0.001 >= profile.min_duration for cue in finalized))
+        self.assertEqual(report["ko_long_cue_count"], 0)
+        self.assertEqual(report["ko_fast_cue_count"], 0)
+        self.assertEqual(report["ko_unsafe_boundary_count"], 0)
+
+    def test_korean_finalizer_splits_maxed_long_cue_and_closes_small_gap(self):
+        profile = resolve_profile("youtube_long", "ko", min_duration=1.2, max_duration=6.5, max_chars_per_line=20)
+        parts = [
+            "마을회관에서 세 사람이 오랜만에 만나 따뜻한 차를 마시며 서로의 안부와 지난 이야기를 천천히 나누었습니다",
+            "창밖에는 봄비가 내리고 있었고 방 안은 오래도록 조용했습니다",
+        ]
+        text, cues = cues_for_parts(parts, [(431.4, 437.2), (437.62, 443.42)])
+
+        finalized = _finalize_korean_cues(cues, text, "ko", profile)
+        report = build_quality_report(finalized, text, finalized[-1].end, profile, "ko")
+        max_gap = max(cur.start - prev.end for prev, cur in zip(finalized, finalized[1:]))
+
+        self.assertGreater(len(finalized), len(cues))
+        self.assertLessEqual(max_gap, 0.201)
+        self.assertTrue(validate_subtitle_continuity(finalized, text))
+        self.assertEqual(report["ko_long_cue_count"], 0)
+        self.assertEqual(report["ko_fast_cue_count"], 0)
 
     def test_korean_merges_short_tail_cue_when_safe(self):
         profile = resolve_profile("youtube_long", "ko", min_duration=1.2, max_duration=4.0, max_chars_per_line=20)

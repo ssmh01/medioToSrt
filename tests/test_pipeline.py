@@ -3,6 +3,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
@@ -255,6 +256,54 @@ class PipelineTests(unittest.TestCase):
             self.assertIn("cue_diagnostics", result.alignment_payload)
             self.assertIn("before_repair", result.alignment_payload["cue_diagnostics"])
             self.assertIn("after_repair", result.alignment_payload["cue_diagnostics"])
+
+    def test_korean_pipeline_finalizes_cues_after_low_confidence_tail_repair(self):
+        parts = [
+            "오래된 서랍을 열어 보니 가족사진과 편지가 가득했고 지난 세월이 얼마나 빨리 흘렀는지 깨달았습니다,",
+            "옆에 있던 동생은 말없이 사진을 정리하며 천천히 고개를 끄덕였습니다",
+        ]
+        script = " ".join(parts)
+        first_end = len(parts[0])
+        second_start = first_end + 1
+        repaired_cues = [
+            SubtitleCue(1, 0.0, 3.52, parts[0], 0, first_end),
+            SubtitleCue(2, 3.6, 9.4, parts[1], second_start, len(script)),
+        ]
+        repair_info = {
+            "start_index": 1,
+            "detected_index": 1,
+            "start_time": 0.0,
+            "end_time": 9.4,
+            "tail_chars": len(script),
+            "mode": "anchor_interpolated",
+            "confidence": "low",
+            "anchor_count": 1,
+            "reason": "test_tail_repair",
+        }
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch(
+            "autosrt_aligner.pipeline._repair_timeline_if_needed",
+            return_value=(repaired_cues, repair_info),
+        ):
+            result = run_alignment_job(
+                audio_path=Path(temp_dir) / "dummy.mp3",
+                script_text=script,
+                language="ko",
+                subtitle_profile="youtube_long",
+                output_dir=Path(temp_dir) / "out",
+                min_duration=1.2,
+                max_duration=6.5,
+                max_chars_per_line=20,
+                generate_vtt=False,
+                engine=FakeEngine(),
+            )
+
+        self.assertEqual(result.quality_report["ko_long_cue_count"], 0)
+        self.assertEqual(result.quality_report["ko_fast_cue_count"], 0)
+        self.assertEqual(result.quality_report["ko_unsafe_boundary_count"], 0)
+        self.assertEqual(result.quality_report["timeline_status"], "needs_review")
+        self.assertLessEqual(result.quality_report["quality_score"], 75)
+        self.assertTrue(validate_subtitle_continuity(result.cues, script))
 
     def test_local_realign_repairs_suspect_timeline(self):
         script = (

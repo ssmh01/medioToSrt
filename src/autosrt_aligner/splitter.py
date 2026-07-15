@@ -78,8 +78,9 @@ ZH_COMFORT_CPS = 8.5
 KO_FORCE_SPLIT_CHARS = 44
 KO_LONG_CUE_CHARS = 38
 KO_COMFORT_CPS = 9.5
-KO_REBALANCE_FAST_CPS = 13.0
-KO_REBALANCE_WINDOW_SIZE = 4
+KO_SEVERE_FAST_CPS = 10.5
+KO_REBALANCE_WINDOW_SIZE = 7
+KO_REBALANCE_GAP_BARRIER_SECONDS = 0.35
 VISUAL_GAP_TARGET_SECONDS = 0.20
 TIMING_EPSILON = 0.001
 
@@ -316,6 +317,8 @@ def _should_split_zh_cue(
     force_chars = _force_split_chars(language)
     long_chars = _long_cue_chars(language)
     comfort_cps = _comfort_chars_per_second(language)
+    if language_group(language) == "ko" and chars > profile.max_chars_total:
+        return True
     if chars > force_chars:
         return True
     if cps > comfort_cps:
@@ -398,7 +401,7 @@ def _split_cue_at_boundary(
         return None
 
     boundary_time = _boundary_time_from_tokens(tokens, boundary, cue)
-    min_duration = 0.45
+    min_duration = profile.min_duration if language_group(language) == "ko" else 0.45
     if boundary_time - cue.start < min_duration or cue.end - boundary_time < min_duration:
         return None
     first_end = min(boundary_time, cue.end - profile.gap_seconds - min_duration)
@@ -642,59 +645,142 @@ def _rebalance_korean_timeline(
     display_text: str,
     language: str,
     profile: SubtitleProfile,
+    trigger_cps: float = KO_SEVERE_FAST_CPS,
 ) -> list[SubtitleCue]:
     if language_group(language) != "ko" or len(cues) < 2:
         return cues
 
-    rebalanced = list(cues)
+    rebalanced = _merge_short_korean_tail_cue(list(cues), display_text, profile, language)
     index = 0
-    while index < len(rebalanced) - 1:
-        if not _should_rebalance_korean_cue(rebalanced[index], profile):
+    while index < len(rebalanced):
+        if _korean_cue_cps(rebalanced[index]) <= trigger_cps:
             index += 1
             continue
 
-        end_index = _korean_rebalance_window_end(rebalanced, index, profile)
-        if end_index <= index:
-            index += 1
+        run_start, run_end = _korean_fast_run(rebalanced, index)
+        candidate = _find_korean_rebalance_window(
+            rebalanced,
+            run_start,
+            run_end,
+            display_text,
+            profile,
+            language,
+        )
+        if candidate is None:
+            index = run_end + 1
             continue
 
-        window = _rebalance_korean_window(rebalanced[index : end_index + 1], display_text, profile, language)
-        if window is None:
-            index += 1
-            continue
-
-        rebalanced[index : end_index + 1] = window
-        index = end_index + 1
+        window_start, window_end, window = candidate
+        rebalanced[window_start : window_end + 1] = window
+        index = window_end + 1
 
     rebalanced = _merge_short_korean_tail_cue(rebalanced, display_text, profile, language)
     return [replace(cue, index=index + 1) for index, cue in enumerate(rebalanced)]
 
 
-def _should_rebalance_korean_cue(cue: SubtitleCue, profile: SubtitleProfile) -> bool:
+def _finalize_korean_cues(
+    cues: list[SubtitleCue],
+    display_text: str,
+    language: str,
+    profile: SubtitleProfile,
+) -> list[SubtitleCue]:
+    if language_group(language) != "ko":
+        return cues
+
+    finalized = [replace(cue, warnings=[]) for cue in cues]
+    finalized = _repair_timing(finalized, profile, language)
+    finalized = _rebalance_korean_timeline(
+        finalized,
+        display_text,
+        language,
+        profile,
+        trigger_cps=KO_COMFORT_CPS,
+    )
+    finalized = _split_overlong_zh_cues(finalized, display_text, [], language, profile)
+    finalized = _repair_unsafe_boundaries(finalized, display_text, language, profile)
+    finalized = _repair_timing(finalized, profile, language)
+    finalized = _rebalance_korean_timeline(
+        finalized,
+        display_text,
+        language,
+        profile,
+        trigger_cps=KO_COMFORT_CPS,
+    )
+    finalized = _repair_timing(finalized, profile, language)
+    _annotate_warnings(finalized, profile, language)
+    if not validate_subtitle_continuity(finalized, display_text):
+        raise ExportValidationError("韩语最终质量收口未能连续覆盖原文")
+    return finalized
+
+
+def _korean_cue_cps(cue: SubtitleCue) -> float:
     chars = _visible_len(cue.text)
-    cps = chars / max(cue.duration, 0.1)
-    return chars >= max(24, int(profile.max_chars_total * 0.8)) and cps > KO_REBALANCE_FAST_CPS
+    return chars / max(cue.duration, 0.1)
 
 
-def _korean_rebalance_window_end(cues: list[SubtitleCue], start_index: int, profile: SubtitleProfile) -> int:
-    end_index = start_index
-    while end_index + 1 < len(cues) and end_index - start_index + 1 < KO_REBALANCE_WINDOW_SIZE:
-        total_chars = sum(_visible_len(cue.text) for cue in cues[start_index : end_index + 1])
-        total_duration = max(0.1, cues[end_index].end - cues[start_index].start)
-        if end_index > start_index and total_chars / total_duration <= KO_COMFORT_CPS * 0.85:
-            break
+def _korean_fast_run(cues: list[SubtitleCue], severe_index: int) -> tuple[int, int]:
+    start_index = severe_index
+    while (
+        start_index > 0
+        and _can_rebalance_across_korean_gap(cues[start_index - 1], cues[start_index])
+        and _korean_cue_cps(cues[start_index - 1]) > KO_COMFORT_CPS
+    ):
+        start_index -= 1
 
-        next_cue = cues[end_index + 1]
-        next_cps = _visible_len(next_cue.text) / max(next_cue.duration, 0.1)
-        if next_cps > KO_COMFORT_CPS and end_index > start_index:
-            break
+    end_index = severe_index
+    while (
+        end_index + 1 < len(cues)
+        and _can_rebalance_across_korean_gap(cues[end_index], cues[end_index + 1])
+        and _korean_cue_cps(cues[end_index + 1]) > KO_COMFORT_CPS
+    ):
         end_index += 1
+    return start_index, end_index
 
-    total_chars = sum(_visible_len(cue.text) for cue in cues[start_index : end_index + 1])
-    total_duration = max(0.1, cues[end_index].end - cues[start_index].start)
-    if end_index == start_index or total_chars / total_duration > KO_COMFORT_CPS:
-        return start_index
-    return end_index
+
+def _find_korean_rebalance_window(
+    cues: list[SubtitleCue],
+    run_start: int,
+    run_end: int,
+    display_text: str,
+    profile: SubtitleProfile,
+    language: str,
+) -> tuple[int, int, list[SubtitleCue]] | None:
+    run_size = run_end - run_start + 1
+    if run_size > KO_REBALANCE_WINDOW_SIZE:
+        return None
+
+    candidate_ranges: list[tuple[int, float, int, int]] = []
+    min_start = max(0, run_end - KO_REBALANCE_WINDOW_SIZE + 1)
+    max_end = min(len(cues) - 1, run_start + KO_REBALANCE_WINDOW_SIZE - 1)
+    for start_index in range(min_start, run_start + 1):
+        for end_index in range(run_end, max_end + 1):
+            size = end_index - start_index + 1
+            if size < 2 or size > KO_REBALANCE_WINDOW_SIZE:
+                continue
+            window = cues[start_index : end_index + 1]
+            if any(
+                not _can_rebalance_across_korean_gap(prev, cur)
+                for prev, cur in zip(window, window[1:])
+            ):
+                continue
+            slack = sum(max(0.0, cue.duration - (_visible_len(cue.text) / KO_COMFORT_CPS)) for cue in window)
+            candidate_ranges.append((size, -slack, start_index, end_index))
+
+    for _, _, start_index, end_index in sorted(candidate_ranges):
+        window = _rebalance_korean_window(
+            cues[start_index : end_index + 1],
+            display_text,
+            profile,
+            language,
+        )
+        if window is not None:
+            return start_index, end_index, window
+    return None
+
+
+def _can_rebalance_across_korean_gap(prev: SubtitleCue, cur: SubtitleCue) -> bool:
+    gap = cur.start - prev.end
+    return -TIMING_EPSILON <= gap <= KO_REBALANCE_GAP_BARRIER_SECONDS + TIMING_EPSILON
 
 
 def _rebalance_korean_window(
@@ -722,7 +808,7 @@ def _rebalance_korean_window(
 
     chars = [_visible_len(text) for text in texts]
     total_chars = sum(chars)
-    if total_chars <= 0:
+    if total_chars <= 0 or any(count > profile.max_chars_total for count in chars):
         return None
 
     min_gap = profile.gap_seconds
@@ -731,14 +817,17 @@ def _rebalance_korean_window(
     available_duration = total_end - total_start - min_gap * (len(cues) - 1)
     if available_duration <= profile.min_duration:
         return None
+    target_cps = min(profile.max_chars_per_second, KO_COMFORT_CPS)
+    if total_chars / available_duration > target_cps:
+        return None
 
     durations = [available_duration * (count / total_chars) for count in chars]
     timing_max_duration = _timing_max_duration(profile, language)
-    if any(duration < 0.9 for duration in durations):
+    if any(duration + TIMING_EPSILON < profile.min_duration for duration in durations):
         return None
     if any(duration > timing_max_duration + TIMING_EPSILON for duration in durations):
         return None
-    if any(count / max(duration, 0.1) > profile.max_chars_per_second for count, duration in zip(chars, durations)):
+    if any(count / max(duration, 0.1) > target_cps for count, duration in zip(chars, durations)):
         return None
 
     rebalanced: list[SubtitleCue] = []
