@@ -241,6 +241,11 @@ async function pollJob(jobId) {
         nodes.statusText.textContent = "生成完成";
         resetSubmitButton();
     }
+    if (payload.status === "needs_review") {
+        clearPolling();
+        nodes.statusText.textContent = "已阻断导出，请下载诊断报告复核";
+        resetSubmitButton();
+    }
     if (payload.status === "failed") {
         clearPolling();
         showError(payload.error || "任务失败");
@@ -267,6 +272,9 @@ function renderStage(stage) {
     } else if (stage === "succeeded") {
         activeIndex = 3;
         nodes.statusText.textContent = "生成完成";
+    } else if (stage === "needs_review") {
+        activeIndex = 2;
+        nodes.statusText.textContent = "质量门禁阻断，等待复核";
     } else if (stage === "failed") {
         activeIndex = 1;
         nodes.statusText.textContent = "生成失败";
@@ -280,7 +288,7 @@ function renderStage(stage) {
                 step.querySelector(".step-dot").textContent = "✓";
             }
         } else if (index === activeIndex) {
-            step.classList.add(stage === "failed" ? "error" : "active");
+            step.classList.add(stage === "failed" || stage === "needs_review" ? "error" : "active");
         }
     });
 }
@@ -321,11 +329,13 @@ function renderQuality(report) {
         ["总字幕条数", "0"],
         ["警告条数", "0"],
         ["错误条数", "0"],
-        ["语音覆盖率", "--"],
+        ["原文证据覆盖率", "--"],
         ["平均每条时长", "--"],
         ["最长时长", "--"],
         ["时间轴状态", "--"],
         ["时间轴置信度", "--"],
+        ["时间证据", "--"],
+        ["低置信 token", "0"],
         ["低置信段", "0"],
     ];
     nodes.qualityGrid.innerHTML = values
@@ -339,11 +349,11 @@ function renderQuality(report) {
     }
     const warnings = report.warnings || [];
     const score = Number(report.quality_score || 0);
-    if (!warnings.length && score >= 90) {
+    if (report.publish_status === "pass" || (!warnings.length && score >= 90)) {
         nodes.qualityBadge.textContent = "通过";
         nodes.qualityBadge.classList.add("pass");
     } else {
-        nodes.qualityBadge.textContent = "需检查";
+        nodes.qualityBadge.textContent = report.publish_status === "blocked" ? "已阻断" : "需检查";
         nodes.qualityBadge.classList.add("warn");
     }
 }
@@ -352,38 +362,65 @@ function qualityValues(report) {
     const warningCount = (report.warnings || []).length;
     const errorCount = Number(report.too_long_count || 0)
         + Number(report.too_short_count || 0)
-        + Number(report.overlap_count || 0);
-    const coverage = `${Math.max(0, (1 - Number(report.unaligned_text_ratio || 0)) * 100).toFixed(2)}%`;
+        + Number(report.overlap_count || 0)
+        + Number(report.token_overlap_count || 0)
+        + Number(report.time_reversal_count || 0)
+        + (report.confidence_status === "not_provided"
+            ? 0
+            : Number(report.missing_confidence_token_count || 0));
+    const coverage = report.source_token_coverage != null
+        ? `${(Number(report.source_token_coverage) * 100).toFixed(2)}%`
+        : "--";
     return [
         ["总字幕条数", String(report.subtitle_count || 0)],
         ["警告条数", String(warningCount)],
         ["错误条数", String(errorCount)],
-        ["语音覆盖率", coverage],
+        ["原文证据覆盖率", coverage],
         ["平均每条时长", `${report.avg_subtitle_duration || 0} 秒`],
         ["最长时长", `${report.max_subtitle_duration || 0} 秒`],
         ["时间轴状态", timelineStatusLabel(report.timeline_status || "ok")],
-        ["时间轴置信度", `${report.timeline_confidence_score ?? "--"}`],
+        ["时间轴置信度", confidenceStatusLabel(report)],
+        ["时间证据", timingEvidenceLabel(report.timing_verification)],
+        ["低置信 token", String(report.low_confidence_token_count || 0)],
         ["低置信段", String((report.low_confidence_ranges || []).length)],
     ];
 }
 
+function confidenceStatusLabel(report) {
+    if (report.confidence_status === "not_provided") return "模型未提供";
+    if (report.confidence_status === "not_available") return "不可用";
+    return `${report.timeline_confidence_score ?? "--"}`;
+}
+
+function timingEvidenceLabel(value) {
+    if (value === "structural_evidence_only") return "结构校验";
+    if (value === "not_available") return "不可用";
+    if (value) return value;
+    return "--";
+}
+
 function timelineStatusLabel(status) {
     if (status === "needs_review") return "需检查";
+    if (status === "failed") return "失败";
     if (status === "repaired") return "已修复";
     return "正常";
 }
 
 function renderDownloads(downloads, qualityReport = null) {
     if (!downloads.length) {
-        nodes.downloadList.innerHTML = '<div class="empty-download">生成完成后显示下载文件</div>';
+        nodes.downloadList.innerHTML = qualityReport?.publish_status === "blocked"
+            ? '<div class="empty-download">字幕未导出，请下载诊断报告</div>'
+            : '<div class="empty-download">生成完成后显示下载文件</div>';
         return;
     }
     const needsTimelineReview = qualityReport?.timeline_status === "needs_review";
     nodes.downloadList.innerHTML = downloads.map((item) => {
         const extension = item.label.split(".").pop().toUpperCase();
-        const meta = needsTimelineReview && item.kind === "srt"
-            ? "需检查时间轴"
-            : "点击右侧按钮下载";
+        const meta = qualityReport?.publish_status === "blocked"
+            ? "质量门禁诊断文件"
+            : needsTimelineReview && item.kind === "srt"
+                ? "需检查时间轴"
+                : "点击右侧按钮下载";
         return `
             <div class="download-item ${needsTimelineReview && item.kind === "srt" ? "needs-review" : ""}">
                 <div class="download-icon ${escapeAttr(item.kind)}">${escapeHtml(extension)}</div>

@@ -28,6 +28,55 @@ class CleanedText:
     align_to_display: list[int]
 
 
+@dataclass(frozen=True)
+class SourceDocument:
+    """Immutable source-text contract used by the V2 alignment pipeline."""
+
+    raw_text: str
+    display_text: str
+    align_text: str
+    align_to_display: tuple[int, ...]
+    language: str
+    source_hash: str
+
+    @property
+    def visible_length(self) -> int:
+        return len("".join(self.display_text.split()))
+
+
+@dataclass(frozen=True)
+class AudioChunk:
+    """A source span and its corresponding audio search window."""
+
+    chunk_id: str
+    source_start: int
+    source_end: int
+    audio_start: float
+    audio_end: float
+    overlap_before: float = 0.0
+    overlap_after: float = 0.0
+    core_source_start: int | None = None
+    core_source_end: int | None = None
+    core_audio_start: float | None = None
+    core_audio_end: float | None = None
+
+
+@dataclass
+class ChunkAlignment:
+    """Alignment evidence produced for one audio chunk."""
+
+    chunk: AudioChunk
+    tokens: list["AlignmentToken"]
+    engine: str
+    model: str | None = None
+    confidence: float | None = None
+    attempts: int = 1
+    warnings: list[str] = field(default_factory=list)
+    effective_audio_start: float | None = None
+    effective_audio_end: float | None = None
+    confidence_available: bool = True
+
+
 @dataclass
 class AlignmentToken:
     text: str
@@ -36,6 +85,8 @@ class AlignmentToken:
     start_char: int | None = None
     end_char: int | None = None
     confidence: float | None = None
+    chunk_id: str | None = None
+    unit_type: str = "unknown"
 
     @property
     def duration(self) -> float:

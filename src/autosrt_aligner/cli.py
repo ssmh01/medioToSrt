@@ -5,8 +5,9 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from .errors import AutosrtError
-from .pipeline import run_alignment_job
+from .errors import AutosrtError, ExportValidationError
+from .engines.factory import ENGINE_CHOICES
+from .pipeline_v2 import run_alignment_job_v2 as run_alignment_job
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -25,6 +26,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--min-duration", type=float, default=None)
     parser.add_argument("--max-duration", type=float, default=None)
     parser.add_argument("--max-chars-per-line", type=int, default=None)
+    parser.add_argument(
+        "--engine",
+        default="auto",
+        choices=ENGINE_CHOICES,
+        help="对齐引擎；auto 在 Apple Silicon 且安装 mlx-audio 时优先使用 Qwen",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -39,7 +46,13 @@ def main(argv: list[str] | None = None) -> int:
             max_duration=args.max_duration,
             max_chars_per_line=args.max_chars_per_line,
             generate_vtt=args.vtt,
+            alignment_engine=args.engine,
         )
+    except ExportValidationError as exc:
+        print(f"ERROR: {exc}")
+        print(f"quality_report: {Path(args.out_dir) / 'quality_report.json'}")
+        print(f"alignment_json: {Path(args.out_dir) / 'alignment.json'}")
+        return 2
     except AutosrtError as exc:
         print(f"ERROR: {exc}")
         return 2

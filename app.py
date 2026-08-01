@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import tempfile
@@ -15,8 +16,10 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from autosrt_aligner.errors import AutosrtError, InputError
-from autosrt_aligner.pipeline import run_alignment_job
+from autosrt_aligner.errors import AutosrtError, ExportValidationError, InputError
+from autosrt_aligner.engines.factory import alignment_engine_status
+from autosrt_aligner.models import seconds_to_preview
+from autosrt_aligner.pipeline_v2 import run_alignment_job_v2 as run_alignment_job
 from autosrt_aligner.profiles import PROFILE_LABELS, SUPPORTED_LANGUAGES, resolve_profile
 
 
@@ -82,6 +85,7 @@ def api_options() -> dict[str, Any]:
             for key, label in PROFILE_LABELS.items()
         ],
         "language_defaults": language_defaults,
+        "alignment_engine": alignment_engine_status(),
         "defaults": {
             "subtitle_profile": "youtube_long",
             "min_duration": 1.2,
@@ -224,6 +228,18 @@ def _run_job(
             quality_report=result.quality_report,
             files=files,
         )
+    except ExportValidationError as exc:
+        quality_report, files, preview_rows = _load_review_artifacts(output_dir)
+        _update_job(
+            job_id,
+            status="needs_review",
+            stage="needs_review",
+            logs=[str(exc), "质量门禁已阻断字幕导出，已保留诊断文件等待复核"],
+            preview_rows=preview_rows,
+            quality_report=quality_report,
+            files=files,
+            error=str(exc),
+        )
     except (AutosrtError, InputError) as exc:
         _update_job(job_id, status="failed", stage="failed", logs=[str(exc)], error=str(exc))
     except Exception as exc:  # pragma: no cover - UI safety net
@@ -304,17 +320,63 @@ def _job_payload(record: JobRecord) -> dict[str, Any]:
 
 
 def _download_payload(record: JobRecord) -> list[dict[str, str]]:
-    if record.status != "succeeded":
+    if record.status not in {"succeeded", "needs_review"}:
         return []
+    kinds = ("srt", "vtt") if record.status == "succeeded" else ("quality_report", "alignment")
     return [
         {
             "kind": kind,
             "label": _download_filename(record, kind),
             "url": f"/api/jobs/{record.job_id}/files/{kind}",
         }
-        for kind in ("srt", "vtt")
+        for kind in kinds
         if kind in record.files and record.files[kind].exists()
     ]
+
+
+def _load_review_artifacts(
+    output_dir: Path,
+) -> tuple[dict[str, Any] | None, dict[str, Path], list[list[Any]]]:
+    """Expose blocked-job evidence without manufacturing subtitle output."""
+
+    quality_report = _read_json_file(output_dir / "quality_report.json")
+    alignment_payload = _read_json_file(output_dir / "alignment.json") or {}
+    files = {
+        kind: path
+        for kind, path in {
+            "quality_report": output_dir / "quality_report.json",
+            "alignment": output_dir / "alignment.json",
+        }.items()
+        if path.exists()
+    }
+    rows: list[list[Any]] = []
+    for cue in alignment_payload.get("cues", []):
+        try:
+            start = float(cue.get("start", 0.0))
+            end = float(cue.get("end", start))
+        except (TypeError, ValueError):
+            continue
+        rows.append(
+            [
+                cue.get("index", len(rows) + 1),
+                seconds_to_preview(start),
+                seconds_to_preview(end),
+                str(cue.get("text", "")),
+                round(max(0.0, end - start), 3),
+                "质量门禁阻断导出",
+            ]
+        )
+    return quality_report, files, rows
+
+
+def _read_json_file(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return payload if isinstance(payload, dict) else None
 
 
 def _download_filename(record: JobRecord, kind: str) -> str:

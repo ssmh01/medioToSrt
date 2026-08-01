@@ -41,6 +41,11 @@ class FormatTests(unittest.TestCase):
 
         self.assertIn("\n第一行\n第二行\n", srt)
 
+    def test_export_srt_can_preserve_source_punctuation(self):
+        cues = [SubtitleCue(1, 0.0, 1.25, "第一句。", 0, 4)]
+        srt = export_srt(cues, strip_trailing_punctuation=False)
+        self.assertIn("\n第一句。\n", srt)
+
 
 if __name__ == "__main__":
     unittest.main()

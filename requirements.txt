@@ -1,5 +1,8 @@
 fastapi>=0.110,<1
 uvicorn>=0.29,<1
 python-multipart>=0.0.9
-stable-ts>=2.19.0
+# V2 的 token 提取与分块对齐按此版本验证，避免上游 API/时间戳行为漂移。
+stable-ts==2.19.1
 imageio-ffmpeg>=0.5.1
+# Apple Silicon 可选：已知原文 Qwen3-ForcedAligner 后端。
+mlx-audio>=0.4.4,<0.5; sys_platform == "darwin" and platform_machine == "arm64"

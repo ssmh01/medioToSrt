@@ -31,10 +31,17 @@ def _strip_trailing_punctuation_per_line(text: str) -> str:
     return "\n".join(cleaned_lines)
 
 
-def export_srt(cues: list[SubtitleCue]) -> str:
+def export_srt(
+    cues: list[SubtitleCue],
+    strip_trailing_punctuation: bool = True,
+) -> str:
     blocks: list[str] = []
     for cue in cues:
-        text = _strip_trailing_punctuation_per_line(cue.text)
+        text = (
+            _strip_trailing_punctuation_per_line(cue.text)
+            if strip_trailing_punctuation
+            else cue.text
+        )
         blocks.append(
             f"{cue.index}\n{srt_timestamp(cue.start)} --> {srt_timestamp(cue.end)}\n{text}"
         )

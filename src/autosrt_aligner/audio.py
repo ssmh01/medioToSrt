@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -38,6 +39,8 @@ def ensure_ffmpeg_on_path() -> str:
         if local_bin:
             os.environ["PATH"] = f"{local_bin.parent}{os.pathsep}{os.environ.get('PATH', '')}"
             return str(local_bin)
+        fallback_parent = str(Path(fallback).parent)
+        os.environ["PATH"] = f"{fallback_parent}{os.pathsep}{os.environ.get('PATH', '')}"
         return fallback
 
     raise DependencyError(
@@ -163,16 +166,21 @@ def _imageio_ffmpeg_path() -> str | None:
 
 
 def _local_ffmpeg_link(source: str) -> Path | None:
-    executable_dir = Path(sys.prefix) / ("Scripts" if sys.platform == "win32" else "bin")
-    if not executable_dir.exists():
-        executable_dir = Path(sys.executable).resolve().parent
-    if not os.access(executable_dir, os.W_OK):
-        return None
-    target = executable_dir / "ffmpeg"
-    if target.exists():
-        return target
-    try:
-        target.symlink_to(source)
-    except OSError:
-        return None
-    return target
+    preferred_dir = Path(sys.prefix) / ("Scripts" if sys.platform == "win32" else "bin")
+    if not preferred_dir.exists():
+        preferred_dir = Path(sys.executable).resolve().parent
+    candidates = [preferred_dir, Path(tempfile.gettempdir()) / "autosrt_ffmpeg_bin"]
+    for executable_dir in candidates:
+        try:
+            executable_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            continue
+        target = executable_dir / "ffmpeg"
+        if target.exists():
+            return target
+        try:
+            target.symlink_to(source)
+            return target
+        except OSError:
+            continue
+    return None

@@ -1,4 +1,4 @@
-"""End-to-end alignment, split, validation, and export pipeline."""
+"""Legacy compatibility pipeline; production entry points use ``pipeline_v2``."""
 
 from __future__ import annotations
 

@@ -9,13 +9,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from autosrt_aligner.audio import clip_audio_segment, ensure_ffmpeg_on_path
+from autosrt_aligner.audio import clip_audio_segment, ensure_ffmpeg_on_path, probe_audio_duration
 from autosrt_aligner.errors import AlignmentError, DependencyError
-from autosrt_aligner.models import AlignmentResult, AlignmentToken, CleanedText
+from autosrt_aligner.models import AlignmentResult, AlignmentToken, AudioChunk, CleanedText
 
 
 class StableTsEngine:
     requires_audio_preprocessing = True
+    engine_name = "stable-ts"
+    enforce_chunk_timing = True
 
     def __init__(self, model_name: str = "base") -> None:
         self.model_name = model_name
@@ -57,6 +59,7 @@ class StableTsEngine:
             raise AlignmentError("stable-ts 未返回可用 token/word 时间戳")
 
         raw = _summarize_result(result)
+        raw["confidence_available"] = True
         raw["requested_language"] = language
         raw["stable_ts_language"] = language_arg
         return AlignmentResult(tokens=tokens, raw=raw, audio_duration=raw.get("duration"), language=language)
@@ -84,6 +87,53 @@ class StableTsEngine:
         )
         return self.align(clip_path, cleaned_text, language, logs)
 
+    def align_chunk(
+        self,
+        audio_path: Path,
+        cleaned_text: CleanedText,
+        language: str,
+        chunk: AudioChunk,
+        work_dir: Path,
+        logs: list[str],
+        attempt_id: str,
+    ) -> AlignmentResult:
+        """Align one bounded audio window and return global timestamps."""
+
+        clip_path = clip_audio_segment(
+            audio_path,
+            work_dir / f"chunk_{chunk.chunk_id}_{attempt_id}.wav",
+            chunk.audio_start,
+            chunk.audio_end,
+        )
+        result = self.align(clip_path, cleaned_text, language, logs)
+        offset = chunk.audio_start
+        clip_duration = _clip_duration_or_default(
+            clip_path,
+            chunk.audio_end - chunk.audio_start,
+        )
+        tokens = [
+            AlignmentToken(
+                text=token.text,
+                start=max(0.0, token.start + offset),
+                end=max(token.start + offset, token.end + offset),
+                confidence=token.confidence,
+                chunk_id=chunk.chunk_id,
+                unit_type=token.unit_type,
+            )
+            for token in result.tokens
+        ]
+        return AlignmentResult(
+            tokens=tokens,
+            raw={
+                **result.raw,
+                "chunk_id": chunk.chunk_id,
+                "effective_audio_start": offset,
+                "effective_audio_end": offset + clip_duration,
+            },
+            audio_duration=clip_duration,
+            language=language,
+        )
+
 
 def _extract_tokens(result: Any) -> list[AlignmentToken]:
     tokens: list[AlignmentToken] = []
@@ -107,6 +157,7 @@ def _extract_tokens(result: Any) -> list[AlignmentToken]:
                             start=start,
                             end=end,
                             confidence=_as_optional_float(probability),
+                            unit_type="word",
                         )
                     )
         else:
@@ -114,7 +165,14 @@ def _extract_tokens(result: Any) -> list[AlignmentToken]:
             start = _as_float(_get_attr_or_item(segment, "start", 0.0))
             end = _as_float(_get_attr_or_item(segment, "end", start))
             if text and end >= start:
-                tokens.append(AlignmentToken(text=str(text), start=start, end=end))
+                tokens.append(
+                    AlignmentToken(
+                        text=str(text),
+                        start=start,
+                        end=end,
+                        unit_type="segment",
+                    )
+                )
     return tokens
 
 
@@ -132,6 +190,14 @@ def _get_attr_or_item(value: Any, key: str, default: Any = None) -> Any:
     if isinstance(value, dict):
         return value.get(key, default)
     return getattr(value, key, default)
+
+
+def _clip_duration_or_default(audio_path: Path, fallback: float) -> float:
+    try:
+        duration = probe_audio_duration(audio_path)
+    except Exception:
+        return fallback
+    return duration if duration > 0 else fallback
 
 
 def _as_float(value: Any) -> float:

@@ -1,4 +1,4 @@
-"""Rule-based subtitle splitting and export text formatting."""
+"""Legacy rule-based splitter kept for compatibility tests and old callers."""
 
 from __future__ import annotations
 

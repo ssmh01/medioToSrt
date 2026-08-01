@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import tempfile
@@ -12,6 +13,7 @@ from fastapi.testclient import TestClient
 
 import app as web_app
 from autosrt_aligner.models import JobResult, SubtitleCue
+from autosrt_aligner.errors import ExportValidationError
 
 
 def fake_run_alignment_job(
@@ -172,6 +174,58 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("请上传 TXT 文案", response.json()["detail"])
 
+    def test_quality_gate_exposes_review_artifacts_without_subtitle_download(self):
+        original_runner = web_app.run_alignment_job
+
+        def blocked_run_alignment_job(*args, **kwargs):
+            out_dir = Path(kwargs["output_dir"])
+            out_dir.mkdir(parents=True, exist_ok=True)
+            (out_dir / "quality_report.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": "2",
+                        "publish_status": "blocked",
+                        "warnings": ["存在时间轴问题"],
+                        "subtitle_count": 1,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (out_dir / "alignment.json").write_text(
+                json.dumps(
+                    {
+                        "cues": [
+                            {"index": 1, "start": 0.0, "end": 1.5, "text": "测试字幕"}
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            raise ExportValidationError("质量门禁阻断")
+
+        web_app.run_alignment_job = blocked_run_alignment_job
+        try:
+            response = self.client.post(
+                "/api/jobs",
+                data={
+                    "script_text": "测试字幕",
+                    "language": "zh",
+                    "subtitle_profile": "youtube_long",
+                },
+                files={"audio_file": ("audio.mp3", b"audio", "audio/mpeg")},
+            )
+            self.assertEqual(response.status_code, 200)
+            payload = self._wait_for_job(response.json()["job_id"])
+            self.assertEqual(payload["status"], "needs_review")
+            self.assertEqual(payload["quality_report"]["publish_status"], "blocked")
+            self.assertEqual({item["kind"] for item in payload["downloads"]}, {"quality_report", "alignment"})
+            self.assertEqual(payload["preview_rows"][0][3], "测试字幕")
+            quality_download = self.client.get(f"/api/jobs/{response.json()['job_id']}/files/quality_report")
+            self.assertEqual(quality_download.status_code, 200)
+            self.assertIn("blocked", quality_download.text)
+        finally:
+            web_app.run_alignment_job = original_runner
+
     def test_unknown_job_and_file_kind_return_404(self):
         missing = self.client.get("/api/jobs/not-found")
         self.assertEqual(missing.status_code, 404)
@@ -182,7 +236,7 @@ class WebAppTests(unittest.TestCase):
             response = self.client.get(f"/api/jobs/{job_id}")
             self.assertEqual(response.status_code, 200)
             payload = response.json()
-            if payload["status"] in {"succeeded", "failed"}:
+            if payload["status"] in {"succeeded", "needs_review", "failed"}:
                 return payload
             time.sleep(0.05)
         self.fail("job did not finish")
