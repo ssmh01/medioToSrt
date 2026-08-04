@@ -13,13 +13,21 @@ PROFILE_LABELS = {
     "slow_elder": "老年频道慢节奏朗读字幕",
 }
 
-SUPPORTED_LANGUAGES = {"zh", "zh-TW", "ja", "en", "ko"}
+CANONICAL_LANGUAGES = ("zh", "ja", "en", "ko")
+LANGUAGE_ALIASES = {"zh-TW": "zh"}
+SUPPORTED_LANGUAGES = set(CANONICAL_LANGUAGES) | set(LANGUAGE_ALIASES)
+
+
+def normalize_language(language: str) -> str:
+    normalized = LANGUAGE_ALIASES.get(language, language)
+    if normalized not in CANONICAL_LANGUAGES:
+        raise InputError(f"不支持的语言参数: {language}")
+    return normalized
 
 
 def language_group(language: str) -> str:
-    if language not in SUPPORTED_LANGUAGES:
-        raise InputError(f"不支持的语言参数: {language}")
-    if language in {"zh", "zh-TW"}:
+    language = normalize_language(language)
+    if language == "zh":
         return "cjk"
     if language == "ja":
         return "ja"

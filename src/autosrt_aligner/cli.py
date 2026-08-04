@@ -8,6 +8,7 @@ from pathlib import Path
 from .errors import AutosrtError, ExportValidationError
 from .engines.factory import ENGINE_CHOICES
 from .pipeline_v2 import run_alignment_job_v2 as run_alignment_job
+from .profiles import normalize_language
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -39,7 +40,7 @@ def main(argv: list[str] | None = None) -> int:
         result = run_alignment_job(
             audio_path=args.audio,
             script_text=script_text,
-            language=args.language,
+            language=normalize_language(args.language),
             subtitle_profile=args.profile,
             output_dir=args.out_dir,
             min_duration=args.min_duration,

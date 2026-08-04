@@ -7,6 +7,7 @@ import re
 
 from .errors import AlignmentError
 from .models import AlignmentToken, SourceDocument, SubtitleCue, SubtitleProfile
+from .profiles import language_group
 from .text import render_display_segment, validate_subtitle_continuity
 
 STRONG_PUNCT = set("。！？!?…．.")
@@ -163,6 +164,7 @@ def _boundary_cost(
 
 
 def _is_safe_boundary(text: str, char_end: int, language: str) -> bool:
+    group = language_group(language)
     previous = _previous_visible(text, char_end)
     following = _next_visible(text, char_end)
     if not previous or not following:
@@ -175,7 +177,7 @@ def _is_safe_boundary(text: str, char_end: int, language: str) -> bool:
         words = re.findall(r"[A-Za-z']+", text[:char_end])
         if words and words[-1].lower() in EN_BAD_EDGE and following.isalpha():
             return False
-    elif language == "zh":
+    elif group == "cjk":
         if previous in ZH_BAD_EDGE and following not in STRONG_PUNCT | MID_PUNCT:
             return False
     elif language == "ja":
@@ -194,12 +196,13 @@ def _is_safe_boundary(text: str, char_end: int, language: str) -> bool:
 
 
 def _has_bad_edge(text: str, language: str) -> bool:
+    group = language_group(language)
     words = re.findall(r"[A-Za-z']+", text)
     if language == "en":
         return bool(words and words[-1].lower() in EN_BAD_EDGE)
     if not text:
         return False
-    if language == "zh":
+    if group == "cjk":
         return text[-1] in ZH_BAD_EDGE
     if language == "ja":
         return text[-1] in JA_BAD_EDGE

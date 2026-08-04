@@ -28,7 +28,7 @@ from .quality_v2 import build_v2_quality_report
 from .reconcile import reconcile_chunk_alignments
 from .segmenter_v2 import segment_cues
 from .text import build_source_document, map_tokens_to_source_strict
-from .profiles import resolve_profile
+from .profiles import normalize_language, resolve_profile
 
 FULL_CONTEXT_MAX_SECONDS = 300.0
 INSTANT_TOKEN_RUN_RETRY_THRESHOLD = 5
@@ -66,6 +66,7 @@ def run_alignment_job_v2(
     """Run the V2 pipeline without timestamp invention or silent text mapping."""
 
     logs: list[str] = []
+    language = normalize_language(language)
     engine = engine or create_alignment_engine(alignment_engine)
     logs.append(
         "V2 对齐引擎: "

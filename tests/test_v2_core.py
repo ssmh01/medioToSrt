@@ -838,6 +838,8 @@ class V2CoreTests(unittest.TestCase):
                 self.assertEqual(result.quality_report["text_status"], "pass")
                 srt = result.srt_path.read_text(encoding="utf-8")
                 vtt = result.vtt_path.read_text(encoding="utf-8")
+                if language == "zh-TW":
+                    self.assertEqual(result.alignment_payload["source"]["language"], "zh")
                 if language == "en":
                     self.assertIn("table.", srt)
                 elif language == "ko":

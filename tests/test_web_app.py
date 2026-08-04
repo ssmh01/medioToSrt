@@ -95,6 +95,8 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertNotIn("auto", payload["languages"])
+        self.assertIn("zh", payload["languages"])
+        self.assertNotIn("zh-TW", payload["languages"])
         self.assertIn("ko", payload["languages"])
         self.assertNotIn("language", payload["defaults"])
         self.assertEqual(payload["defaults"]["subtitle_profile"], "youtube_long")
@@ -103,7 +105,6 @@ class WebAppTests(unittest.TestCase):
             payload["language_defaults"],
             {
                 "zh": {"min_duration": 1.2, "max_duration": 6.5, "max_chars_per_line": 18},
-                "zh-TW": {"min_duration": 1.2, "max_duration": 6.5, "max_chars_per_line": 18},
                 "ja": {"min_duration": 1.2, "max_duration": 6.5, "max_chars_per_line": 17},
                 "en": {"min_duration": 1.2, "max_duration": 6.0, "max_chars_per_line": 42},
                 "ko": {"min_duration": 1.2, "max_duration": 6.5, "max_chars_per_line": 20},
@@ -161,6 +162,24 @@ class WebAppTests(unittest.TestCase):
         self.assertIn("audio.srt", download.headers["content-disposition"])
         self.assertIn("\n测试字幕\n", download.text)
         self.assertNotIn("测试字幕。", download.text)
+
+    def test_create_job_accepts_legacy_traditional_language_alias(self):
+        response = self.client.post(
+            "/api/jobs",
+            data={
+                "script_text": "测试字幕。",
+                "language": "zh-TW",
+                "subtitle_profile": "youtube_long",
+                "min_duration": "1.0",
+                "max_duration": "4.0",
+                "max_chars_per_line": "18",
+                "generate_vtt": "true",
+            },
+            files={"audio_file": ("audio.mp3", b"audio", "audio/mpeg")},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = self._wait_for_job(response.json()["job_id"])
+        self.assertEqual(payload["status"], "succeeded")
 
     def test_create_job_requires_audio(self):
         response = self.client.post("/api/jobs", data={"script_text": "测试字幕"})

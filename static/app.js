@@ -459,8 +459,7 @@ function buildWaveform() {
 
 function languageLabel(value) {
     return {
-        zh: "中文（简体）",
-        "zh-TW": "中文（繁体）",
+        zh: "中文",
         ja: "日语",
         en: "英语",
         ko: "韩语",

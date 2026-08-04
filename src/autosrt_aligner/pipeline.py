@@ -14,7 +14,7 @@ from .engines.base import AlignmentEngine
 from .engines.factory import create_alignment_engine
 from .formats import export_srt, export_vtt
 from .models import AlignmentToken, JobResult, SubtitleCue
-from .profiles import language_group, resolve_profile
+from .profiles import language_group, normalize_language, resolve_profile
 from .quality import build_quality_report
 from .splitter import (
     VISUAL_GAP_TARGET_SECONDS,
@@ -63,6 +63,7 @@ def run_alignment_job(
     engine: AlignmentEngine | None = None,
 ) -> JobResult:
     logs: list[str] = []
+    language = normalize_language(language)
     engine = engine or create_alignment_engine("qwen-mlx")
     profile = resolve_profile(
         subtitle_profile,

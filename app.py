@@ -20,12 +20,18 @@ from autosrt_aligner.errors import AutosrtError, ExportValidationError, InputErr
 from autosrt_aligner.engines.factory import alignment_engine_status
 from autosrt_aligner.models import seconds_to_preview
 from autosrt_aligner.pipeline_v2 import run_alignment_job_v2 as run_alignment_job
-from autosrt_aligner.profiles import PROFILE_LABELS, SUPPORTED_LANGUAGES, resolve_profile
+from autosrt_aligner.profiles import (
+    CANONICAL_LANGUAGES,
+    PROFILE_LABELS,
+    SUPPORTED_LANGUAGES,
+    normalize_language,
+    resolve_profile,
+)
 
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
-LANGUAGES = ["zh", "zh-TW", "ja", "en", "ko"]
+LANGUAGES = list(CANONICAL_LANGUAGES)
 FILE_LABELS = {
     "srt": "字幕文件.srt",
     "vtt": "字幕文件.vtt",
@@ -122,6 +128,7 @@ def create_job(
     text = _read_script_text(script_file, script_text)
     if language not in SUPPORTED_LANGUAGES:
         raise HTTPException(status_code=400, detail=f"不支持的语言参数: {language}")
+    language = normalize_language(language)
     job_id = str(uuid.uuid4())
     output_dir = Path(tempfile.mkdtemp(prefix=f"autosrt_web_{job_id}_"))
     upload_dir = output_dir / "uploads"
