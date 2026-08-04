@@ -12,8 +12,10 @@ dependencies = [
   "fastapi>=0.110,<1",
   "uvicorn>=0.29,<1",
   "python-multipart>=0.0.9",
-  "stable-ts>=2.19.0",
   "imageio-ffmpeg>=0.5.1",
+  "mlx-audio>=0.4.4,<0.5; sys_platform == 'darwin' and platform_machine == 'arm64'",
+  "nagisa>=0.3.0,<0.4",
+  "soynlp>=0.0.493,<0.1",
 ]
 
 [project.scripts]

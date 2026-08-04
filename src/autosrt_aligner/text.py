@@ -150,18 +150,18 @@ def map_tokens_to_source_strict(
         if not token_text:
             continue
 
-        align_index = source.align_text.find(token_text, cursor)
-        if align_index < 0:
+        token_span = _find_token_span(source.align_text, token_text, cursor)
+        if token_span is None:
             raise AlignmentError(
                 f"对齐 token 无法映射回原文: {token.text!r}, cursor={cursor}"
             )
+        align_index, align_end = token_span
         skipped = source.align_text[cursor:align_index]
         if any(not _is_ignorable_alignment_gap(char) for char in skipped):
             raise AlignmentError(
                 f"对齐 token 跳过了原文内容: {skipped[:24]!r}"
             )
 
-        align_end = align_index + len(token_text)
         if align_end - 1 >= len(source.align_to_display):
             raise AlignmentError("对齐 token 超出原文映射范围")
         start_char = source.align_to_display[align_index] + source_offset
@@ -192,6 +192,43 @@ def map_tokens_to_source_strict(
 
 def _is_ignorable_alignment_gap(char: str) -> bool:
     return char.isspace() or unicodedata.category(char).startswith("P") or char in MARKDOWN_NOISE
+
+
+def _find_token_span(source_text: str, token_text: str, cursor: int) -> tuple[int, int] | None:
+    """Find a token, allowing source punctuation inside a Qwen token.
+
+    Qwen's Japanese tokenizer can merge text around punctuation, for example
+    returning ``五六`` for the source ``五、六``. The punctuation remains part
+    of the source contract, so the mapped span includes it while every
+    non-punctuation source character still has to match exactly.
+    """
+
+    direct_index = source_text.find(token_text, cursor)
+    if direct_index >= 0:
+        return direct_index, direct_index + len(token_text)
+    if not token_text or any(_is_ignorable_alignment_gap(char) for char in token_text):
+        return None
+
+    for start in range(cursor, len(source_text)):
+        if source_text[start] != token_text[0]:
+            continue
+        if any(not _is_ignorable_alignment_gap(char) for char in source_text[cursor:start]):
+            continue
+
+        source_index = start
+        token_index = 0
+        while source_index < len(source_text) and token_index < len(token_text):
+            source_char = source_text[source_index]
+            if _is_ignorable_alignment_gap(source_char):
+                source_index += 1
+                continue
+            if source_char != token_text[token_index]:
+                break
+            source_index += 1
+            token_index += 1
+        if token_index == len(token_text):
+            return start, source_index
+    return None
 
 
 def validate_subtitle_continuity(cues: list[SubtitleCue], display_text: str) -> bool:

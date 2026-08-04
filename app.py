@@ -92,7 +92,6 @@ def api_options() -> dict[str, Any]:
             "max_duration": 6.5,
             "max_chars_per_line": 18,
             "generate_vtt": True,
-            "preserve_punctuation": True,
         },
     }
 
@@ -108,7 +107,6 @@ def create_job(
     max_duration: float = Form(default=6.5),
     max_chars_per_line: int = Form(default=18),
     generate_vtt: bool = Form(default=True),
-    preserve_punctuation: bool = Form(default=True),
 ) -> dict[str, str]:
     if audio_file is None or not audio_file.filename:
         raise HTTPException(status_code=400, detail="请先上传音频文件")
@@ -160,7 +158,6 @@ def create_job(
             "max_duration": max_duration,
             "max_chars_per_line": max_chars_per_line,
             "generate_vtt": generate_vtt,
-            "preserve_punctuation": preserve_punctuation,
         },
         daemon=True,
     )
@@ -196,7 +193,6 @@ def _run_job(
     max_duration: float,
     max_chars_per_line: int,
     generate_vtt: bool,
-    preserve_punctuation: bool,
 ) -> None:
     _update_job(job_id, status="running", stage="aligning", logs=["开始语音识别与字幕对齐"])
     try:
@@ -210,7 +206,6 @@ def _run_job(
             max_duration=max_duration,
             max_chars_per_line=max_chars_per_line,
             generate_vtt=generate_vtt,
-            preserve_punctuation=preserve_punctuation,
         )
         files = {
             "srt": result.srt_path,

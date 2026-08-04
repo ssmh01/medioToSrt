@@ -18,7 +18,6 @@ const nodes = {
     maxDuration: document.getElementById("maxDuration"),
     maxChars: document.getElementById("maxChars"),
     generateVtt: document.getElementById("generateVtt"),
-    preservePunctuation: document.getElementById("preservePunctuation"),
     submitButton: document.getElementById("submitButton"),
     statusText: document.getElementById("statusText"),
     previewBody: document.getElementById("previewBody"),
@@ -87,7 +86,6 @@ async function loadOptions() {
     nodes.maxDuration.value = data.defaults.max_duration;
     nodes.maxChars.value = data.defaults.max_chars_per_line;
     nodes.generateVtt.checked = data.defaults.generate_vtt;
-    nodes.preservePunctuation.checked = data.defaults.preserve_punctuation;
 }
 
 function applyLanguageDefaults() {
@@ -197,7 +195,6 @@ async function submitJob(event) {
     formData.append("max_duration", nodes.maxDuration.value);
     formData.append("max_chars_per_line", nodes.maxChars.value);
     formData.append("generate_vtt", nodes.generateVtt.checked ? "true" : "false");
-    formData.append("preserve_punctuation", nodes.preservePunctuation.checked ? "true" : "false");
 
     try {
         const response = await fetch("/api/jobs", { method: "POST", body: formData });

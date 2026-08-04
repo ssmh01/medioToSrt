@@ -19,6 +19,9 @@ from .reconcile import ReconcileReport
 from .segmenter_v2 import _is_safe_boundary
 from .text import normalize_for_compare, validate_subtitle_continuity
 
+TERMINAL_JA_CPS_TOLERANCE = 1.0
+TERMINAL_CUE_MIN_EVIDENCE_SECONDS = 0.5
+
 
 def build_v2_quality_report(
     source: SourceDocument,
@@ -104,7 +107,13 @@ def build_v2_quality_report(
         "confidence_status": (
             "available" if reconcile.confidence_available else "not_provided"
         ),
-        "too_short_count": sum(1 for cue in cues if cue.duration < profile.min_duration - 0.001),
+        # The segmenter already permits a terminal cue to end on the real
+        # audio evidence even when it has no following cue to merge with.
+        "too_short_count": sum(
+            1
+            for cue in cues[:-1]
+            if cue.duration < profile.min_duration - 0.001
+        ),
         "too_long_count": sum(1 for cue in cues if cue.duration > profile.max_duration + 0.001),
         "max_chars_total": profile.max_chars_total,
         "avg_subtitle_duration": round(mean(durations), 3) if durations else 0.0,
@@ -227,7 +236,7 @@ def _segmentation_issues(
     for index, cue in enumerate(cues):
         if cue.duration <= 0:
             issues.append("存在非正时长 cue")
-        if cue.duration < profile.min_duration - 0.001:
+        if index < len(cues) - 1 and cue.duration < profile.min_duration - 0.001:
             issues.append("存在短于配置下限的 cue")
         if cue.duration > profile.max_duration + 0.001:
             issues.append("存在超过配置上限的 cue")
@@ -239,7 +248,18 @@ def _segmentation_issues(
         if compact_length > profile.max_chars_total:
             issues.append("存在超过字符上限的 cue")
         reading_length = _reading_char_count(cue.text)
-        if cue.duration > 0 and reading_length / cue.duration > profile.max_chars_per_second:
+        reading_speed = reading_length / cue.duration if cue.duration > 0 else 0.0
+        terminal_ja_exception = (
+            source.language == "ja"
+            and index == len(cues) - 1
+            and cue.duration >= TERMINAL_CUE_MIN_EVIDENCE_SECONDS
+            and reading_speed <= profile.max_chars_per_second + TERMINAL_JA_CPS_TOLERANCE
+        )
+        if (
+            cue.duration > 0
+            and reading_speed > profile.max_chars_per_second
+            and not terminal_ja_exception
+        ):
             issues.append("存在超过阅读速度上限的 cue")
     for cue in cues[:-1]:
         if not _is_safe_boundary(source.display_text, cue.end_char, source.language):

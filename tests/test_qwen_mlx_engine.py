@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 from autosrt_aligner.engines import factory
 from autosrt_aligner.engines.qwen_mlx import QwenMlxEngine
 import autosrt_aligner.engines.qwen_mlx as qwen_mlx
-from autosrt_aligner.errors import AlignmentError, DependencyError
+from autosrt_aligner.errors import AlignmentError, DependencyError, InputError
 from autosrt_aligner.models import AlignmentToken, AudioChunk, ChunkAlignment, CleanedText
 from autosrt_aligner.reconcile import reconcile_chunk_alignments
 from autosrt_aligner.text import build_source_document
@@ -76,19 +76,26 @@ class QwenMlxEngineTests(unittest.TestCase):
             "clip_audio_segment",
             return_value=Path("clip.wav"),
         ):
+            logs = []
             result = engine.align_chunk(
                 Path("audio.wav"),
                 self.cleaned,
                 "zh-TW",
                 chunk,
                 Path(tempfile.mkdtemp()),
-                [],
+                logs,
                 "002-1",
             )
 
         self.assertEqual(result.tokens[0].start, 12.6)
         self.assertEqual(result.tokens[1].end, 13.1)
         self.assertEqual(result.tokens[0].chunk_id, "chunk-002")
+        self.assertTrue(any("裁剪窗口" in log and "实际" in log for log in logs))
+
+    def test_chunk_retry_uses_wider_qwen_context(self):
+        self.assertEqual(QwenMlxEngine.retry_padding_seconds, (0.0, 8.0, 16.0))
+        self.assertEqual(QwenMlxEngine.chunk_overlap_seconds, 16.0)
+        self.assertEqual(QwenMlxEngine.trailing_context_seconds, 8.0)
 
     def test_unsupported_language_is_rejected(self):
         engine = QwenMlxEngine(loader=lambda _name: self.aligner)
@@ -103,20 +110,20 @@ class QwenMlxEngineTests(unittest.TestCase):
 
 
 class AlignmentEngineFactoryTests(unittest.TestCase):
-    def test_explicit_engine_selection(self):
-        self.assertIsInstance(factory.create_alignment_engine("stable-ts"), factory.StableTsEngine)
+    def test_only_qwen_engine_is_supported(self):
         self.assertIsInstance(factory.create_alignment_engine("qwen-mlx"), QwenMlxEngine)
+        self.assertIsInstance(factory.create_alignment_engine("auto"), QwenMlxEngine)
+        with self.assertRaises(InputError):
+            factory.create_alignment_engine("stable-ts")
 
-    def test_auto_selects_qwen_only_when_mlx_is_available(self):
-        with patch.object(factory.platform, "machine", return_value="arm64"), patch.object(
-            factory,
-            "qwen_mlx_runtime_available",
-            return_value=True,
-        ):
-            self.assertIsInstance(factory.create_alignment_engine("auto"), QwenMlxEngine)
+    def test_status_never_reports_stable_ts_as_backend(self):
+        with patch.object(factory, "_qwen_mlx_available", return_value=False):
+            status = factory.alignment_engine_status()
 
-        with patch.object(factory.platform, "machine", return_value="x86_64"):
-            self.assertIsInstance(factory.create_alignment_engine("auto"), factory.StableTsEngine)
+        self.assertEqual(status["selected"], "qwen-mlx")
+        self.assertEqual(status["choices"], ["qwen-mlx"])
+        self.assertEqual(status["backend"], "qwen-mlx")
+        self.assertFalse(status["qwen_mlx_available"])
 
     def test_qwen_without_confidence_is_reported_but_not_mislabeled_as_low_confidence(self):
         source = build_source_document("清楚", "zh")

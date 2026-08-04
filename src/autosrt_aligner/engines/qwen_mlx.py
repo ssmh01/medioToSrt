@@ -40,6 +40,16 @@ class QwenMlxEngine:
     # Keep a single call below the model's documented short-input budget. Long
     # recordings continue through the existing overlap/retry pipeline.
     max_full_context_seconds = 180.0
+    # Give Qwen enough context to keep Japanese word timestamps stable across
+    # long-recording seams while remaining well below the model limit.
+    chunk_target_seconds = 90.0
+    chunk_overlap_seconds = 16.0
+    # Keep a small real-audio tail so Qwen does not place the final token just
+    # beyond a proportional chunk boundary.
+    trailing_context_seconds = 8.0
+    # Japanese can still collapse a local run at a chunk boundary. Retry with
+    # progressively wider real-audio context before accepting the evidence.
+    retry_padding_seconds = (0.0, 8.0, 16.0)
 
     def __init__(
         self,
@@ -137,17 +147,23 @@ class QwenMlxEngine:
     ) -> AlignmentResult:
         """Align a clipped window and restore its timestamps to global time."""
 
+        clip_end = chunk.audio_end + self.trailing_context_seconds
         clip_path = clip_audio_segment(
             audio_path,
             work_dir / f"chunk_{chunk.chunk_id}_{attempt_id}.wav",
             chunk.audio_start,
-            chunk.audio_end,
+            clip_end,
         )
         result = self.align(clip_path, cleaned_text, language, logs)
         offset = chunk.audio_start
         clip_duration = _clip_duration_or_default(
             clip_path,
             chunk.audio_end - chunk.audio_start,
+        )
+        logs.append(
+            f"{chunk.chunk_id} attempt {attempt_id} 裁剪窗口: "
+            f"请求 {chunk.audio_start:.3f}-{clip_end:.3f}s，"
+            f"实际 {offset:.3f}-{offset + clip_duration:.3f}s"
         )
         tokens = [
             AlignmentToken(

@@ -5,6 +5,13 @@ from __future__ import annotations
 import unicodedata
 
 from .models import SubtitleCue
+from .profiles import language_group
+
+
+_NEUTRAL_TERMINAL_PUNCTUATION = frozenset("。．｡.,，、､")
+_ELLIPSIS_CHARACTERS = frozenset({"…", "⋯", "︙"})
+_CLOSING_DELIMITER_CATEGORIES = frozenset({"Pe", "Pf"})
+_ASCII_CLOSING_QUOTES = frozenset({"'", '"'})
 
 
 def srt_timestamp(seconds: float) -> str:
@@ -21,12 +28,35 @@ def vtt_timestamp(seconds: float) -> str:
     return srt_timestamp(seconds).replace(",", ".")
 
 
-def _strip_trailing_punctuation_per_line(text: str) -> str:
+def _is_closing_delimiter(char: str) -> bool:
+    return (
+        unicodedata.category(char) in _CLOSING_DELIMITER_CATEGORIES
+        or char in _ASCII_CLOSING_QUOTES
+    )
+
+
+def _has_ellipsis_suffix(text: str) -> bool:
+    return text.endswith("...") or any(text.endswith(char) for char in _ELLIPSIS_CHARACTERS)
+
+
+def _strip_trailing_punctuation_per_line(text: str, language: str) -> str:
+    if language_group(language) == "en":
+        return text
+
     cleaned_lines: list[str] = []
     for line in text.split("\n"):
         cleaned = line.rstrip()
-        while cleaned and unicodedata.category(cleaned[-1]).startswith("P"):
+
+        closing_delimiters = ""
+        while cleaned and _is_closing_delimiter(cleaned[-1]):
+            closing_delimiters = cleaned[-1] + closing_delimiters
             cleaned = cleaned[:-1].rstrip()
+
+        if not _has_ellipsis_suffix(cleaned):
+            while cleaned and cleaned[-1] in _NEUTRAL_TERMINAL_PUNCTUATION:
+                cleaned = cleaned[:-1].rstrip()
+
+        cleaned += closing_delimiters
         cleaned_lines.append(cleaned)
     return "\n".join(cleaned_lines)
 
@@ -34,11 +64,13 @@ def _strip_trailing_punctuation_per_line(text: str) -> str:
 def export_srt(
     cues: list[SubtitleCue],
     strip_trailing_punctuation: bool = True,
+    *,
+    language: str = "zh",
 ) -> str:
     blocks: list[str] = []
     for cue in cues:
         text = (
-            _strip_trailing_punctuation_per_line(cue.text)
+            _strip_trailing_punctuation_per_line(cue.text, language)
             if strip_trailing_punctuation
             else cue.text
         )

@@ -11,7 +11,7 @@ from typing import Any
 
 from .audio import preprocess_audio
 from .engines.base import AlignmentEngine
-from .engines.stable_ts import StableTsEngine
+from .engines.factory import create_alignment_engine
 from .formats import export_srt, export_vtt
 from .models import AlignmentToken, JobResult, SubtitleCue
 from .profiles import language_group, resolve_profile
@@ -63,7 +63,7 @@ def run_alignment_job(
     engine: AlignmentEngine | None = None,
 ) -> JobResult:
     logs: list[str] = []
-    engine = engine or StableTsEngine()
+    engine = engine or create_alignment_engine("qwen-mlx")
     profile = resolve_profile(
         subtitle_profile,
         language,
@@ -224,7 +224,7 @@ def run_alignment_job(
         quality_report["timeline_repair_confidence"] = timeline_repair.get("confidence")
 
     srt_path = out_dir / "output.srt"
-    srt_path.write_text(export_srt(cues), encoding="utf-8")
+    srt_path.write_text(export_srt(cues, language=language), encoding="utf-8")
     vtt_path = None
     if generate_vtt:
         vtt_path = out_dir / "output.vtt"

@@ -21,6 +21,7 @@ from autosrt_aligner.pipeline_v2 import run_alignment_job_v2
 from autosrt_aligner.pipeline_v2 import (
     _align_chunk_with_retry,
     _align_source,
+    _anchor_chunk_to_previous,
     _chunk_alignment,
 )
 from autosrt_aligner.quality_v2 import _timing_issues, build_v2_quality_report
@@ -52,6 +53,22 @@ class V2CoreTests(unittest.TestCase):
         self.assertEqual(mapped[0].start_char, offset)
         self.assertEqual(mapped[-1].end_char, len(full.display_text))
         self.assertEqual(mapped[0].chunk_id, "chunk-001")
+
+    def test_strict_mapping_accepts_japanese_token_across_source_punctuation(self):
+        source = build_source_document("ほんの五、六軒", "ja")
+        mapped = map_tokens_to_source_strict(
+            [
+                AlignmentToken("ほんの", 0.0, 0.4),
+                AlignmentToken("五六", 0.4, 0.8),
+                AlignmentToken("軒", 0.8, 1.0),
+            ],
+            source,
+        )
+
+        five_index = source.display_text.index("五")
+        six_end = source.display_text.index("軒")
+        self.assertEqual(mapped[1].start_char, five_index)
+        self.assertEqual(mapped[1].end_char, six_end)
 
     def test_chunk_planner_covers_long_source_with_audio_overlap(self):
         text = "这是一个很长的中文段落，用来验证分块规划。" * 80
@@ -234,6 +251,160 @@ class V2CoreTests(unittest.TestCase):
             ),
         )
 
+    def test_window_retry_expands_only_the_failed_side_and_uses_overrun(self):
+        source = build_source_document("这是原文", "zh")
+        cleaned = CleanedText(
+            display_text=source.display_text,
+            align_text=source.align_text,
+            align_to_display=list(source.align_to_display),
+        )
+        chunk = AudioChunk(
+            "chunk-001",
+            0,
+            len(source.display_text),
+            30.0,
+            40.0,
+            core_source_start=0,
+            core_source_end=len(source.display_text),
+            core_audio_start=30.0,
+            core_audio_end=40.0,
+        )
+
+        class WindowRetryEngine:
+            enforce_chunk_timing = True
+            retry_padding_seconds = (0.0, 8.0, 16.0)
+
+            def __init__(self, side):
+                self.side = side
+                self.calls = []
+
+            def align_chunk(
+                self,
+                audio_path,
+                cleaned_text,
+                language,
+                attempt_chunk,
+                work_dir,
+                logs,
+                attempt_id,
+            ):
+                self.calls.append((attempt_chunk.audio_start, attempt_chunk.audio_end))
+                if len(self.calls) == 1:
+                    if self.side == "start":
+                        start = attempt_chunk.audio_start - 21.0
+                        end = start + 0.2
+                    else:
+                        start = attempt_chunk.audio_end + 21.0
+                        end = start + 0.2
+                else:
+                    start = attempt_chunk.audio_start + 0.1
+                    end = start + 0.2
+                return AlignmentResult(
+                    tokens=[AlignmentToken(cleaned_text.display_text, start, end)],
+                    raw={"engine": "window-retry-fixture"},
+                )
+
+        for side, expected_calls in (
+            ("start", [(30.0, 40.0), (8.5, 40.0)]),
+            ("end", [(30.0, 40.0), (30.0, 61.7)]),
+        ):
+            with self.subTest(side=side):
+                engine = WindowRetryEngine(side)
+                logs = []
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    _align_chunk_with_retry(
+                        chunk_aligner=engine.align_chunk,
+                        align_audio_path=Path("/missing/audio.wav"),
+                        cleaned=cleaned,
+                        chunk=chunk,
+                        chunk_source=source,
+                        audio_duration=100.0,
+                        language="zh",
+                        work_dir=Path(temp_dir),
+                        logs=logs,
+                        attempt_prefix="001",
+                    )
+                self.assertEqual(engine.calls, expected_calls)
+                self.assertTrue(any("按实际越界方向" in log for log in logs))
+
+    def test_next_chunk_window_uses_previous_confirmed_time_anchor(self):
+        chunk = AudioChunk(
+            "chunk-002",
+            120,
+            240,
+            90.0,
+            120.0,
+            overlap_before=5.0,
+            overlap_after=5.0,
+            core_source_start=130,
+            core_source_end=230,
+            core_audio_start=95.0,
+            core_audio_end=115.0,
+        )
+
+        anchored = _anchor_chunk_to_previous(chunk, 101.25, 180.0)
+
+        self.assertAlmostEqual(anchored.audio_start, 96.25)
+        self.assertAlmostEqual(anchored.audio_end, 126.25)
+        self.assertAlmostEqual(anchored.core_audio_start, 101.25)
+        self.assertAlmostEqual(anchored.core_audio_end, 121.25)
+        self.assertAlmostEqual(anchored.overlap_before, 5.0)
+        self.assertAlmostEqual(anchored.overlap_after, 5.0)
+
+    def test_alignment_source_applies_confirmed_anchor_to_following_chunk(self):
+        class AnchoredFixtureEngine:
+            requires_audio_preprocessing = False
+            enforce_chunk_timing = True
+            max_full_context_seconds = 120.0
+            chunk_target_seconds = 30.0
+            chunk_overlap_seconds = 4.0
+
+            def align_chunk(
+                self,
+                audio_path,
+                cleaned_text,
+                language,
+                chunk,
+                work_dir,
+                logs,
+                attempt_id,
+            ):
+                tokens = []
+                for index, char in enumerate(cleaned_text.display_text):
+                    start = 5.0 + (chunk.source_start + index) * 0.04
+                    tokens.append(AlignmentToken(char, start, start + 0.04))
+                return AlignmentResult(
+                    tokens=tokens,
+                    raw={"engine": "anchor-fixture"},
+                    audio_duration=chunk.audio_end - chunk.audio_start,
+                    language=language,
+                )
+
+        source = build_source_document("这是一个用于验证时间锚定的中文句子" * 80, "zh")
+        planned = plan_audio_chunks(
+            source,
+            180.0,
+            target_seconds=30.0,
+            overlap_seconds=4.0,
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            chunks, alignments, _ = _align_source(
+                engine=AnchoredFixtureEngine(),
+                source=source,
+                align_audio_path=Path("/missing/audio.wav"),
+                audio_duration=180.0,
+                work_dir=Path(temp_dir),
+                language="zh",
+                logs=[],
+            )
+
+        self.assertGreater(len(chunks), 1)
+        self.assertEqual(len(chunks), len(alignments))
+        self.assertLess(chunks[1].audio_start, planned[1].audio_start - 1.0)
+        boundary = chunks[1].core_source_start
+        self.assertIsNotNone(boundary)
+        self.assertAlmostEqual(chunks[1].core_audio_start, 5.0 + boundary * 0.04)
+
     def test_quality_report_distinguishes_text_from_token_time_evidence(self):
         source = build_source_document("清楚", "zh")
         cues = [SubtitleCue(1, 0.0, 1.5, "清楚", 0, 2)]
@@ -261,6 +432,30 @@ class V2CoreTests(unittest.TestCase):
         self.assertEqual(report["text_integrity_status"], "pass")
         self.assertEqual(report["token_evidence_status"], "fail")
         self.assertEqual(report["uncovered_source_ranges"][0]["text"], "楚")
+
+    def test_quality_report_allows_real_terminal_cue_below_min_duration_and_speed_limit(self):
+        source = build_source_document("お会いしましょう。", "ja")
+        cue = SubtitleCue(1, 0.0, 0.64, source.display_text, 0, len(source.display_text))
+        chunk = AudioChunk(
+            "chunk-001",
+            0,
+            len(source.display_text),
+            0.0,
+            1.0,
+            core_source_start=0,
+            core_source_end=len(source.display_text),
+        )
+        report = build_v2_quality_report(
+            source,
+            [AlignmentToken(source.align_text, 0.0, 0.64, 0, len(source.display_text), None, "chunk-001")],
+            [cue],
+            [chunk],
+            ReconcileReport(1.0, 0, 0, 0, 0, ()),
+            resolve_profile("youtube_long", "ja"),
+            audio_duration=1.0,
+        )
+        self.assertEqual(report["too_short_count"], 0)
+        self.assertEqual(report["segmentation_status"], "pass")
 
     def test_reconciler_deduplicates_overlap_evidence_and_reports_clean_result(self):
         source = build_source_document("这是第一句。", "zh")
@@ -493,13 +688,62 @@ class V2CoreTests(unittest.TestCase):
                 audio_duration=180.0,
                 work_dir=Path(temp_dir),
                 language="zh",
-                preserve_punctuation=True,
                 logs=[],
             )
         self.assertGreater(len(chunks), 1)
         self.assertEqual(len(chunks), len(alignments))
         self.assertEqual(engine.chunk_calls, len(chunks))
         self.assertEqual(duration, 180.0)
+
+    def test_chunk_engine_can_request_context_and_overlap_budget(self):
+        class ContextAwareChunkEngine:
+            requires_audio_preprocessing = False
+            max_full_context_seconds = 120.0
+            chunk_target_seconds = 90.0
+            chunk_overlap_seconds = 8.0
+
+            def __init__(self):
+                self.chunks = []
+
+            def align_chunk(
+                self,
+                audio_path,
+                cleaned_text,
+                language,
+                chunk,
+                work_dir,
+                logs,
+                attempt_id,
+            ):
+                self.chunks.append(chunk)
+                token = AlignmentToken(
+                    cleaned_text.display_text,
+                    chunk.audio_start,
+                    chunk.audio_start + 0.2,
+                )
+                return AlignmentResult(
+                    tokens=[token],
+                    raw={"engine": "context-fixture"},
+                    audio_duration=chunk.audio_end - chunk.audio_start,
+                    language=language,
+                )
+
+        engine = ContextAwareChunkEngine()
+        source = build_source_document("这是一个用于验证引擎分块上下文的中文句子。" * 80, "zh")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            _align_source(
+                engine=engine,
+                source=source,
+                align_audio_path=Path("/missing/audio.wav"),
+                audio_duration=180.0,
+                work_dir=Path(temp_dir),
+                language="zh",
+                logs=[],
+            )
+
+        self.assertGreater(len(engine.chunks), 1)
+        self.assertGreaterEqual(engine.chunks[0].overlap_after, 8.0)
+        self.assertGreaterEqual(engine.chunks[1].overlap_before, 8.0)
 
     def test_v2_pipeline_uses_source_text_and_evidence_times(self):
         class FixtureEngine:
@@ -532,6 +776,7 @@ class V2CoreTests(unittest.TestCase):
                 generate_vtt=False,
                 output_dir=temp_dir,
                 engine=FixtureEngine(),
+                preserve_punctuation=False,
             )
             self.assertEqual(result.quality_report["schema_version"], "2")
             self.assertEqual(result.quality_report["text_status"], "pass")
@@ -539,8 +784,12 @@ class V2CoreTests(unittest.TestCase):
             self.assertEqual(result.quality_report["source_token_coverage"], 1.0)
             self.assertEqual(result.quality_report["audio_duration"], 8.36)
             self.assertTrue(result.srt_path.exists())
-            self.assertIn("决定。", result.srt_path.read_text(encoding="utf-8"))
+            srt = result.srt_path.read_text(encoding="utf-8")
+            self.assertIn("决定", srt)
+            self.assertNotIn("决定。", srt)
             alignment = json.loads(result.alignment_json_path.read_text(encoding="utf-8"))
+            self.assertEqual(alignment["source"]["display_text"], script)
+            self.assertEqual(alignment["source"]["align_text"], script)
             self.assertEqual(alignment["chunk_evidence"][0]["token_count"], 38)
             self.assertEqual(alignment["chunks"][0]["core_source_start"], 0)
             self.assertEqual(alignment["chunk_evidence"][0]["effective_audio_start"], 0.0)
@@ -549,6 +798,7 @@ class V2CoreTests(unittest.TestCase):
     def test_v2_pipeline_supports_four_required_languages(self):
         cases = {
             "zh": "母亲把钥匙放在桌上。窗外的雨停了。",
+            "zh-TW": "母親把鑰匙放在桌上。窗外的雨停了。",
             "ja": "母は鍵を机の上に置きました。外の雨が止みました。",
             "ko": "어머니는 열쇠를 책상 위에 놓았습니다. 밖의 비가 그쳤습니다.",
             "en": "Mother put the key on the table. The rain outside stopped.",
@@ -581,12 +831,21 @@ class V2CoreTests(unittest.TestCase):
                     Path("/missing/audio.wav"),
                     script,
                     language=language,
-                    generate_vtt=False,
                     output_dir=temp_dir,
                     engine=MultilingualFixtureEngine(),
                 )
                 self.assertEqual(result.quality_report["publish_status"], "pass")
                 self.assertEqual(result.quality_report["text_status"], "pass")
+                srt = result.srt_path.read_text(encoding="utf-8")
+                vtt = result.vtt_path.read_text(encoding="utf-8")
+                if language == "en":
+                    self.assertIn("table.", srt)
+                elif language == "ko":
+                    self.assertNotIn(".", srt)
+                    self.assertIn(".", vtt)
+                else:
+                    self.assertNotIn("。", srt)
+                    self.assertIn("。", vtt)
 
 
 def validate_text(cues, expected):

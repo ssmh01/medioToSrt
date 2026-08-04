@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 import app as web_app
 from autosrt_aligner.models import JobResult, SubtitleCue
 from autosrt_aligner.errors import ExportValidationError
+from autosrt_aligner.formats import export_srt, export_vtt
 
 
 def fake_run_alignment_job(
@@ -26,19 +27,19 @@ def fake_run_alignment_job(
     max_duration=None,
     max_chars_per_line=None,
     generate_vtt=True,
-    preserve_punctuation=True,
     engine=None,
 ):
     out_dir = Path(output_dir or tempfile.mkdtemp(prefix="autosrt_test_"))
     out_dir.mkdir(parents=True, exist_ok=True)
-    cues = [SubtitleCue(1, 0.0, 1.25, script_text.strip(), 0, len(script_text.strip()))]
+    cue_text = script_text.strip()
+    cues = [SubtitleCue(1, 0.0, 1.25, cue_text, 0, len(cue_text))]
     srt_path = out_dir / "output.srt"
     vtt_path = out_dir / "output.vtt" if generate_vtt else None
     quality_path = out_dir / "quality_report.json"
     alignment_path = out_dir / "alignment.json"
-    srt_path.write_text("1\n00:00:00,000 --> 00:00:01,250\n测试字幕\n", encoding="utf-8")
+    srt_path.write_text(export_srt(cues, language=language), encoding="utf-8")
     if vtt_path:
-        vtt_path.write_text("WEBVTT\n\n00:00:00.000 --> 00:00:01.250\n测试字幕\n", encoding="utf-8")
+        vtt_path.write_text(export_vtt(cues), encoding="utf-8")
     quality_report = {
         "audio_duration": 1.25,
         "subtitle_count": 1,
@@ -97,6 +98,7 @@ class WebAppTests(unittest.TestCase):
         self.assertIn("ko", payload["languages"])
         self.assertNotIn("language", payload["defaults"])
         self.assertEqual(payload["defaults"]["subtitle_profile"], "youtube_long")
+        self.assertNotIn("preserve_punctuation", payload["defaults"])
         self.assertEqual(
             payload["language_defaults"],
             {
@@ -118,7 +120,6 @@ class WebAppTests(unittest.TestCase):
                 "max_duration": "4.0",
                 "max_chars_per_line": "12",
                 "generate_vtt": "true",
-                "preserve_punctuation": "true",
             },
             files={"audio_file": ("audio.mp3", b"fake audio", "audio/mpeg")},
         )
@@ -129,14 +130,13 @@ class WebAppTests(unittest.TestCase):
         response = self.client.post(
             "/api/jobs",
             data={
-                "script_text": "测试字幕",
+                "script_text": "测试字幕。",
                 "language": "zh",
                 "subtitle_profile": "youtube_long",
                 "min_duration": "1.0",
                 "max_duration": "4.0",
                 "max_chars_per_line": "18",
                 "generate_vtt": "true",
-                "preserve_punctuation": "true",
             },
             files={"audio_file": ("audio.mp3", b"audio", "audio/mpeg")},
         )
@@ -145,7 +145,7 @@ class WebAppTests(unittest.TestCase):
         payload = self._wait_for_job(job_id)
         self.assertEqual(payload["status"], "succeeded")
         self.assertEqual(payload["quality_report"]["subtitle_count"], 1)
-        self.assertEqual(payload["preview_rows"][0][3], "测试字幕")
+        self.assertEqual(payload["preview_rows"][0][3], "测试字幕。")
         self.assertEqual({item["kind"] for item in payload["downloads"]}, {"srt", "vtt"})
         self.assertIn(
             {"kind": "srt", "label": "audio.srt", "url": f"/api/jobs/{job_id}/files/srt"},
@@ -159,7 +159,8 @@ class WebAppTests(unittest.TestCase):
         download = self.client.get(f"/api/jobs/{job_id}/files/srt")
         self.assertEqual(download.status_code, 200)
         self.assertIn("audio.srt", download.headers["content-disposition"])
-        self.assertIn("测试字幕", download.text)
+        self.assertIn("\n测试字幕\n", download.text)
+        self.assertNotIn("测试字幕。", download.text)
 
     def test_create_job_requires_audio(self):
         response = self.client.post("/api/jobs", data={"script_text": "测试字幕"})

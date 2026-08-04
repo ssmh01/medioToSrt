@@ -28,9 +28,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-chars-per-line", type=int, default=None)
     parser.add_argument(
         "--engine",
-        default="auto",
+        default="qwen-mlx",
         choices=ENGINE_CHOICES,
-        help="对齐引擎；auto 在 Apple Silicon 且安装 mlx-audio 时优先使用 Qwen",
+        help="对齐引擎；本工具固定使用 Qwen MLX",
     )
     args = parser.parse_args(argv)
 

@@ -6,7 +6,7 @@
 
 - 原始文案是最终字幕文本标准答案。
 - 输入文案必须是纯正文；不要把 SRT 序号和时间码混入 forced alignment 文案。
-- stable-ts 只负责提供时间轴，不用于改写、删减或补充文案。
+- Qwen3-ForcedAligner 只负责提供时间轴，不用于改写、删减或补充文案。
 - 对齐 token 必须严格映射回原文，缺字、错字、跳过原文或时间证据冲突都会停止导出。
 - 导出前会生成 `alignment.json` 和 `quality_report.json`；质量门禁未通过时只保留诊断文件，不生成伪造的 SRT。
 - V2 默认先使用整段 forced alignment 保留全局上下文，整段无法严格映射时才使用带重叠的音频分块，并对重叠证据去重、检查时间倒退。
@@ -15,8 +15,8 @@
 
 - Python 3.10+，推荐使用 Codex 自带 Python 3.12。
 - 推荐系统安装 `ffmpeg` 和 `ffprobe`；如果没有系统 ffmpeg，项目会使用 `imageio-ffmpeg` 提供的本地 ffmpeg fallback。
-- 依赖：FastAPI、uvicorn、python-multipart、stable-ts、imageio-ffmpeg。
-- Apple Silicon 可选安装 `mlx-audio`，用于 Qwen3-ForcedAligner 已知原文对齐。
+- 依赖：FastAPI、uvicorn、python-multipart、imageio-ffmpeg、mlx-audio。
+- 必须在能访问 Apple GPU/Metal 的 Apple Silicon 桌面进程中运行 Qwen3-ForcedAligner。
 
 macOS 如果已有 Homebrew，也可以安装系统 ffmpeg：
 
@@ -33,10 +33,9 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-在 Apple Silicon 上，`pip install -r requirements.txt` 会安装 MLX 适配器；首次选择
-Qwen 后端时还会从 Hugging Face 下载 `mlx-community/Qwen3-ForcedAligner-0.6B-8bit`。
-如需显式指定后端，可设置 `AUTOSRT_ALIGNMENT_ENGINE=qwen-mlx`；默认 `auto` 会在
-`mlx-audio` 可用时使用 Qwen，否则保留 stable-ts。显式指定 Qwen 时不会静默回退。
+在 Apple Silicon 上，`pip install -r requirements.txt` 会安装 MLX 适配器；首次运行时
+会从 Hugging Face 下载 `mlx-community/Qwen3-ForcedAligner-0.6B-8bit`。
+本工具固定使用 Qwen MLX。若当前进程无法访问 Metal，任务会明确失败，不会切换到其他对齐引擎。
 
 ## 启动网页
 
@@ -61,7 +60,7 @@ PYTHONPATH=src python -m autosrt_aligner.cli \
   --language zh \
   --profile youtube_long \
   --out-dir outputs \
-  --engine auto \
+  --engine qwen-mlx \
   --vtt
 ```
 
@@ -73,7 +72,6 @@ PYTHONPATH=src python -m autosrt_aligner.cli \
 - 异步任务提交、状态轮询、日志、质量报告和下载列表。
 - 音频上传、txt 上传或文本粘贴。
 - `zh` / `zh-TW` / `ja` / `en` / `ko`，必须手动选择语言。
-- stable-ts forced alignment 引擎封装。
 - Qwen3-ForcedAligner/MLX 已知原文对齐后端；中文（含繁体）、日语、韩语、英语均
   走同一套严格原文映射和质量门禁。
 - 基于 token 时间证据的语言分段：中文、日语、韩语、英语分别处理自然边界。
@@ -95,4 +93,5 @@ PYTHONPATH=src python -m autosrt_aligner.cli \
 PYTHONPATH=src python -m unittest discover -s tests
 ```
 
-真实 stable-ts 对齐需要先安装依赖和 ffmpeg，并准备实际音频文件。若报告显示“待复核”，应先检查报告中的低置信区间和时间证据，再决定是否重新生成；程序不会自动把不确定时间轴标记为通过。
+真实 Qwen MLX 对齐需要可访问 Metal 的 Apple Silicon 进程、模型和 ffmpeg，并准备实际音频文件。
+若报告显示“待复核”，应先检查报告中的低置信区间和时间证据，再决定是否重新生成；程序不会自动把不确定时间轴标记为通过。

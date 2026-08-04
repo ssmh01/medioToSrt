@@ -34,6 +34,21 @@ FULL_CONTEXT_MAX_SECONDS = 300.0
 INSTANT_TOKEN_RUN_RETRY_THRESHOLD = 5
 
 
+class _ChunkTimingWindowError(AlignmentError):
+    """A token was placed outside the real audio window for this attempt."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        start_overrun: float = 0.0,
+        end_overrun: float = 0.0,
+    ) -> None:
+        super().__init__(message)
+        self.start_overrun = start_overrun
+        self.end_overrun = end_overrun
+
+
 def run_alignment_job_v2(
     audio_path: str | Path,
     script_text: str,
@@ -44,7 +59,7 @@ def run_alignment_job_v2(
     max_duration: float | None = None,
     max_chars_per_line: int | None = None,
     generate_vtt: bool = True,
-    preserve_punctuation: bool = True,
+    preserve_punctuation: bool | None = None,
     engine: AlignmentEngine | None = None,
     alignment_engine: str | None = None,
 ) -> JobResult:
@@ -63,7 +78,7 @@ def run_alignment_job_v2(
         max_duration=max_duration,
         max_chars_per_line=max_chars_per_line,
     )
-    source = build_source_document(script_text, language, preserve_punctuation)
+    source = build_source_document(script_text, language, preserve_punctuation=True)
     logs.append(f"V2 文案字符数: {len(source.display_text)}")
 
     out_dir = Path(output_dir) if output_dir else Path(tempfile.mkdtemp(prefix="autosrt_aligner_v2_"))
@@ -88,7 +103,6 @@ def run_alignment_job_v2(
             audio_duration=audio_duration,
             work_dir=work_dir,
             language=language,
-            preserve_punctuation=preserve_punctuation,
             logs=logs,
         )
     except AlignmentError as exc:
@@ -185,7 +199,11 @@ def run_alignment_job_v2(
 
     srt_path = out_dir / "output.srt"
     srt_path.write_text(
-        export_srt(cues, strip_trailing_punctuation=not preserve_punctuation),
+        export_srt(
+            cues,
+            strip_trailing_punctuation=preserve_punctuation is not True,
+            language=language,
+        ),
         encoding="utf-8",
     )
     vtt_path = None
@@ -215,7 +233,6 @@ def _align_source(
     audio_duration: float | None,
     work_dir: Path,
     language: str,
-    preserve_punctuation: bool,
     logs: list[str],
 ) -> tuple[list[AudioChunk], list[ChunkAlignment], float]:
     chunk_aligner = getattr(engine, "align_chunk", None)
@@ -254,11 +271,33 @@ def _align_source(
             f"{engine_context_limit:.0f}s，直接使用重叠分块"
         )
 
-    chunks = plan_audio_chunks(source, audio_duration)
+    chunks = plan_audio_chunks(
+        source,
+        audio_duration,
+        target_seconds=_chunk_target_seconds(engine),
+        overlap_seconds=_chunk_overlap_seconds(engine),
+    )
     alignments: list[ChunkAlignment] = []
-    for index, chunk in enumerate(chunks, start=1):
+    for index, planned_chunk in enumerate(chunks, start=1):
+        previous_core_end_time = (
+            _previous_core_end_time(alignments[-1], planned_chunk)
+            if alignments and getattr(engine, "enforce_chunk_timing", False)
+            else None
+        )
+        chunk = _anchor_chunk_to_previous(
+            planned_chunk,
+            previous_core_end_time,
+            audio_duration,
+        )
+        if chunk != planned_chunk:
+            chunks[index - 1] = chunk
+            logs.append(
+                f"{chunk.chunk_id} 使用上一分块实际时间锚定窗口: "
+                f"{planned_chunk.audio_start:.3f}-{planned_chunk.audio_end:.3f}s -> "
+                f"{chunk.audio_start:.3f}-{chunk.audio_end:.3f}s"
+            )
         chunk_text = source.display_text[chunk.source_start : chunk.source_end]
-        chunk_source = build_source_document(chunk_text, language, preserve_punctuation)
+        chunk_source = build_source_document(chunk_text, language, preserve_punctuation=True)
         cleaned = CleanedText(
             display_text=chunk_source.display_text,
             align_text=chunk_source.align_text,
@@ -279,6 +318,7 @@ def _align_source(
             work_dir=work_dir,
             logs=logs,
             attempt_prefix=f"{index:03d}",
+            previous_core_end_time=previous_core_end_time,
         )
         alignments.append(_chunk_alignment(chunk, mapped, result))
     return chunks, alignments, audio_duration
@@ -333,14 +373,33 @@ def _align_chunk_with_retry(
     work_dir: Path,
     logs: list[str],
     attempt_prefix: str,
+    previous_core_end_time: float | None = None,
 ) -> tuple[list[AlignmentToken], AlignmentResult]:
     errors: list[str] = []
     best_collapse: tuple[int, list[AlignmentToken], AlignmentResult, int] | None = None
-    for attempt, padding in enumerate((0.0, 4.0, 8.0), start=1):
+    required_start_padding = 0.0
+    required_end_padding = 0.0
+    window_retry = False
+    for attempt, padding in enumerate(
+        _retry_padding_seconds(chunk_aligner),
+        start=1,
+    ):
+        if window_retry:
+            start_padding = max(
+                required_start_padding,
+                padding if required_start_padding > 0 else 0.0,
+            )
+            end_padding = max(
+                required_end_padding,
+                padding if required_end_padding > 0 else 0.0,
+            )
+        else:
+            start_padding = padding
+            end_padding = padding
         attempt_chunk = replace(
             chunk,
-            audio_start=max(0.0, chunk.audio_start - padding),
-            audio_end=min(audio_duration, chunk.audio_end + padding),
+            audio_start=max(0.0, chunk.audio_start - start_padding),
+            audio_end=min(audio_duration, chunk.audio_end + end_padding),
         )
         try:
             result = chunk_aligner(
@@ -357,6 +416,11 @@ def _align_chunk_with_retry(
                 chunk_source,
                 source_offset=chunk.source_start,
                 chunk_id=chunk.chunk_id,
+            )
+            _validate_chunk_core_monotonicity(
+                mapped,
+                chunk,
+                previous_core_end_time,
             )
             engine_instance = getattr(chunk_aligner, "__self__", None)
             if getattr(engine_instance, "enforce_chunk_timing", False):
@@ -375,6 +439,26 @@ def _align_chunk_with_retry(
             result.raw.setdefault("effective_audio_start", attempt_chunk.audio_start)
             result.raw.setdefault("effective_audio_end", attempt_chunk.audio_end)
             return mapped, result
+        except _ChunkTimingWindowError as exc:
+            required_start_padding = max(
+                required_start_padding,
+                exc.start_overrun + 0.5 if exc.start_overrun > 0 else 0.0,
+            )
+            required_end_padding = max(
+                required_end_padding,
+                exc.end_overrun + 0.5 if exc.end_overrun > 0 else 0.0,
+            )
+            window_retry = True
+            errors.append(f"attempt {attempt}: {exc}")
+            directions = []
+            if exc.start_overrun > 0:
+                directions.append(f"前方至少 {required_start_padding:.3f}s")
+            if exc.end_overrun > 0:
+                directions.append(f"后方至少 {required_end_padding:.3f}s")
+            logs.append(
+                f"{chunk.chunk_id} 第 {attempt} 次时间窗口越界，"
+                f"按实际越界方向扩大音频上下文（{'、'.join(directions)}）"
+            )
         except AlignmentError as exc:
             errors.append(f"attempt {attempt}: {exc}")
             logs.append(f"{chunk.chunk_id} 第 {attempt} 次严格映射失败，扩大音频上下文")
@@ -419,6 +503,81 @@ def _chunk_alignment(
     )
 
 
+def _previous_core_end_time(
+    previous: ChunkAlignment,
+    current: AudioChunk,
+) -> float | None:
+    boundary = current.core_source_start
+    if boundary is None:
+        return None
+    previous_core_tokens = [
+        token
+        for token in previous.tokens
+        if token.end_char is not None and token.end_char <= boundary
+    ]
+    if not previous_core_tokens:
+        return None
+    return max(token.end for token in previous_core_tokens)
+
+
+def _anchor_chunk_to_previous(
+    chunk: AudioChunk,
+    previous_core_end_time: float | None,
+    audio_duration: float,
+) -> AudioChunk:
+    """Shift a planned window to the last confirmed source/audio boundary."""
+
+    if (
+        previous_core_end_time is None
+        or chunk.core_audio_start is None
+        or chunk.core_audio_end is None
+    ):
+        return chunk
+
+    shift = previous_core_end_time - chunk.core_audio_start
+    if abs(shift) <= 0.05:
+        return chunk
+
+    audio_start = max(0.0, chunk.audio_start + shift)
+    audio_end = min(audio_duration, chunk.audio_end + shift)
+    core_audio_start = max(0.0, chunk.core_audio_start + shift)
+    core_audio_end = min(audio_duration, chunk.core_audio_end + shift)
+    if audio_end <= audio_start or core_audio_end < core_audio_start:
+        return chunk
+
+    return replace(
+        chunk,
+        audio_start=audio_start,
+        audio_end=audio_end,
+        overlap_before=max(0.0, core_audio_start - audio_start),
+        overlap_after=max(0.0, audio_end - core_audio_end),
+        core_audio_start=core_audio_start,
+        core_audio_end=core_audio_end,
+    )
+
+
+def _validate_chunk_core_monotonicity(
+    tokens: list[AlignmentToken],
+    chunk: AudioChunk,
+    previous_core_end_time: float | None,
+) -> None:
+    if previous_core_end_time is None or chunk.core_source_start is None:
+        return
+    current_core_tokens = [
+        token
+        for token in tokens
+        if token.start_char is not None and token.start_char >= chunk.core_source_start
+    ]
+    if not current_core_tokens:
+        return
+    first_start = min(token.start for token in current_core_tokens)
+    if first_start < previous_core_end_time - 0.05:
+        raise AlignmentError(
+            f"{chunk.chunk_id} 当前核心 token 时间早于上一分块: "
+            f"{first_start:.3f}s < {previous_core_end_time:.3f}s"
+        )
+
+
 def _validate_chunk_attempt_timing(
     tokens: list[AlignmentToken],
     result: AlignmentResult,
@@ -432,13 +591,24 @@ def _validate_chunk_attempt_timing(
         result.raw.get("effective_audio_end"),
         attempt_chunk.audio_end,
     )
+    window_overruns: list[tuple[float, float, AlignmentToken]] = []
     for token in tokens:
-        if token.start < effective_start - 0.25 or token.end > effective_end + 0.25:
-            raise AlignmentError(
-                f"{attempt_chunk.chunk_id} 返回 token 超出实际音频窗口: "
-                f"{token.text!r} {token.start:.3f}-{token.end:.3f}s, "
-                f"有效范围 {effective_start:.3f}-{effective_end:.3f}s"
-            )
+        start_overrun = max(0.0, effective_start - token.start)
+        end_overrun = max(0.0, token.end - effective_end)
+        if start_overrun > 0.25 or end_overrun > 0.25:
+            window_overruns.append((start_overrun, end_overrun, token))
+    if window_overruns:
+        start_overrun, end_overrun, token = max(
+            window_overruns,
+            key=lambda item: max(item[0], item[1]),
+        )
+        raise _ChunkTimingWindowError(
+            f"{attempt_chunk.chunk_id} 返回 token 超出实际音频窗口: "
+            f"{token.text!r} {token.start:.3f}-{token.end:.3f}s, "
+            f"有效范围 {effective_start:.3f}-{effective_end:.3f}s",
+            start_overrun=start_overrun,
+            end_overrun=end_overrun,
+        )
     for previous, current in zip(tokens, tokens[1:]):
         if current.start < previous.start - 0.05:
             raise AlignmentError(
@@ -613,6 +783,38 @@ def _full_context_limit(engine: AlignmentEngine) -> float:
     if not math.isfinite(value) or value <= 0:
         return FULL_CONTEXT_MAX_SECONDS
     return min(FULL_CONTEXT_MAX_SECONDS, value)
+
+
+def _chunk_target_seconds(engine: AlignmentEngine) -> float:
+    value = getattr(engine, "chunk_target_seconds", 45.0)
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return 45.0
+    return value if math.isfinite(value) and value > 0 else 45.0
+
+
+def _chunk_overlap_seconds(engine: AlignmentEngine) -> float:
+    value = getattr(engine, "chunk_overlap_seconds", 1.5)
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return 1.5
+    return value if math.isfinite(value) and value >= 0 else 1.5
+
+
+def _retry_padding_seconds(chunk_aligner: Any) -> tuple[float, ...]:
+    engine_instance = getattr(chunk_aligner, "__self__", None)
+    values = getattr(engine_instance, "retry_padding_seconds", (0.0, 4.0, 8.0))
+    try:
+        paddings = tuple(float(value) for value in values)
+    except (TypeError, ValueError):
+        return (0.0, 4.0, 8.0)
+    if not paddings or paddings[0] != 0.0 or any(
+        not math.isfinite(value) or value < 0 for value in paddings
+    ):
+        return (0.0, 4.0, 8.0)
+    return paddings
 
 
 def _uncovered_source_ranges(
