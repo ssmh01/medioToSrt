@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import math
 import re
+import unicodedata
+from dataclasses import replace
 
 from .errors import AlignmentError
 from .models import AlignmentToken, SourceDocument, SubtitleCue, SubtitleProfile
@@ -60,9 +62,43 @@ def segment_cues(
         char_start = char_end
         token_start = token_end + 1
 
+    cues = _repair_korean_timing(cues, source.language, profile)
     if not cues or not validate_subtitle_continuity(cues, source.display_text):
         raise AlignmentError("语义切分结果无法连续覆盖原文")
     return cues
+
+
+def _repair_korean_timing(
+    cues: list[SubtitleCue],
+    language: str,
+    profile: SubtitleProfile,
+) -> list[SubtitleCue]:
+    """Use an existing inter-cue gap to soften a Korean fast cue.
+
+    The next cue's real start is the upper bound. This only extends a cue into
+    already-unassigned silence; it never moves a cue boundary past the next
+    token or invents an audio timestamp.
+    """
+
+    if language != "ko" or len(cues) < 2 or profile.max_chars_per_second <= 0:
+        return cues
+
+    repaired = list(cues)
+    for index, cue in enumerate(cues[:-1]):
+        spoken_chars = _reading_char_count(cue.text)
+        if spoken_chars <= 0 or cue.duration <= 0:
+            continue
+        target_duration = spoken_chars / profile.max_chars_per_second
+        if cue.duration >= target_duration:
+            continue
+
+        next_start = cues[index + 1].start
+        if next_start <= cue.end:
+            continue
+        repaired_end = min(next_start, cue.start + target_duration)
+        if repaired_end > cue.end:
+            repaired[index] = replace(cue, end=repaired_end)
+    return repaired
 
 
 def _best_path(
@@ -238,3 +274,11 @@ def _has_boundary_space(text: str, char_end: int) -> bool:
     if previous_index is None:
         return False
     return any(char.isspace() for char in text[previous_index + 1 : char_end])
+
+
+def _reading_char_count(value: str) -> int:
+    return sum(
+        1
+        for char in value
+        if not char.isspace() and not unicodedata.category(char).startswith("P")
+    )

@@ -6,7 +6,9 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 
 from autosrt_aligner.models import AlignmentToken, SubtitleCue
 from autosrt_aligner.text import (
+    build_source_document,
     clean_script_text,
+    map_tokens_to_source_strict,
     map_tokens_to_display,
     normalize_for_compare,
     validate_subtitle_continuity,
@@ -32,6 +34,15 @@ class TextTests(unittest.TestCase):
         self.assertEqual(mapped[0].start_char, 0)
         self.assertEqual(mapped[-1].end_char, len(cleaned.display_text))
 
+    def test_strict_mapping_accepts_model_punctuation_inside_token(self):
+        source = build_source_document("혀.'", "ko")
+        mapped = map_tokens_to_source_strict(
+            [AlignmentToken("혀'", 0.0, 0.2)],
+            source,
+        )
+        self.assertEqual(mapped[0].start_char, 0)
+        self.assertEqual(mapped[0].end_char, 1)
+
     def test_validate_subtitle_continuity_ignores_layout_whitespace(self):
         display = "第一句。\n第二句。"
         cues = [
@@ -44,4 +55,3 @@ class TextTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

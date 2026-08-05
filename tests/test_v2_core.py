@@ -2,6 +2,7 @@ import os
 import json
 import sys
 import tempfile
+import unicodedata
 import unittest
 from pathlib import Path
 
@@ -26,7 +27,7 @@ from autosrt_aligner.pipeline_v2 import (
 )
 from autosrt_aligner.quality_v2 import _timing_issues, build_v2_quality_report
 from autosrt_aligner.reconcile import ReconcileReport, reconcile_chunk_alignments
-from autosrt_aligner.segmenter_v2 import segment_cues
+from autosrt_aligner.segmenter_v2 import _repair_korean_timing, segment_cues
 from autosrt_aligner.text import build_source_document, map_tokens_to_source_strict
 from autosrt_aligner.profiles import resolve_profile
 
@@ -533,6 +534,30 @@ class V2CoreTests(unittest.TestCase):
                 text[cue.end_char - 1 : cue.end_char].isalnum()
                 and text[cue.end_char : cue.end_char + 1].isalnum()
             )
+
+    def test_korean_timing_repair_borrows_only_available_gap(self):
+        profile = resolve_profile("youtube_long", "ko")
+        text = "믹스커피를 종이컵에 타다 줬어요. 다음 문장입니다."
+        split_at = text.index("다음")
+        cues = [
+            SubtitleCue(1, 159.04, 160.32, text[:split_at], 0, split_at),
+            SubtitleCue(2, 160.80, 162.40, text[split_at:], split_at, len(text)),
+        ]
+
+        repaired = _repair_korean_timing(cues, "ko", profile)
+
+        self.assertGreater(repaired[0].end, cues[0].end)
+        self.assertLessEqual(repaired[0].end, repaired[1].start)
+        spoken_chars = sum(
+            1
+            for char in repaired[0].text
+            if not char.isspace() and not unicodedata.category(char).startswith("P")
+        )
+        self.assertLessEqual(
+            spoken_chars / repaired[0].duration,
+            profile.max_chars_per_second + 0.001,
+        )
+        self.assertEqual(repaired[1], cues[1])
 
     def test_segmenter_respects_four_language_boundary_rules(self):
         cases = [

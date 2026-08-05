@@ -257,7 +257,9 @@ def _segmentation_issues(
         )
         if (
             cue.duration > 0
-            and reading_speed > profile.max_chars_per_second
+            # Do not reject a cue that only exceeds the limit because of
+            # floating-point rounding at the configured boundary.
+            and reading_speed > profile.max_chars_per_second + 0.001
             and not terminal_ja_exception
         ):
             issues.append("存在超过阅读速度上限的 cue")

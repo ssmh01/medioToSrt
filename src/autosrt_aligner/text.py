@@ -195,18 +195,21 @@ def _is_ignorable_alignment_gap(char: str) -> bool:
 
 
 def _find_token_span(source_text: str, token_text: str, cursor: int) -> tuple[int, int] | None:
-    """Find a token, allowing source punctuation inside a Qwen token.
+    """Find a token while allowing ignorable punctuation differences.
 
-    Qwen's Japanese tokenizer can merge text around punctuation, for example
-    returning ``五六`` for the source ``五、六``. The punctuation remains part
-    of the source contract, so the mapped span includes it while every
-    non-punctuation source character still has to match exactly.
+    Qwen can merge text around punctuation or include punctuation in a token,
+    for example returning ``혀'`` for the source ``혀.'``. Ignorable
+    punctuation and whitespace may differ, while every non-ignorable source
+    character still has to match exactly.
     """
 
     direct_index = source_text.find(token_text, cursor)
     if direct_index >= 0:
         return direct_index, direct_index + len(token_text)
-    if not token_text or any(_is_ignorable_alignment_gap(char) for char in token_text):
+    token_text = "".join(
+        char for char in token_text if not _is_ignorable_alignment_gap(char)
+    )
+    if not token_text:
         return None
 
     for start in range(cursor, len(source_text)):
