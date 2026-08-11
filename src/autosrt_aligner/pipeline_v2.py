@@ -126,6 +126,14 @@ def run_alignment_job_v2(
 
     try:
         cues = segment_cues(source, tokens, profile)
+        if audio_duration and audio_duration > 0 and cues:
+            terminal_cue = cues[-1]
+            if terminal_cue.end < audio_duration:
+                cues[-1] = replace(terminal_cue, end=audio_duration)
+                logs.append(
+                    "V2 最后一条字幕结束时间对齐音频总时长: "
+                    f"{terminal_cue.end:.3f}s -> {audio_duration:.3f}s"
+                )
     except AlignmentError as exc:
         failure_report = _failure_quality_report(source, audio_duration, str(exc))
         failure_report.update(
@@ -344,7 +352,7 @@ def _align_full(
         language,
         logs,
     )
-    duration = result.audio_duration or audio_duration or 0.0
+    duration = audio_duration or result.audio_duration or 0.0
     if duration <= 0:
         raise AlignmentError("对齐引擎没有返回有效音频时长")
     chunk = AudioChunk(

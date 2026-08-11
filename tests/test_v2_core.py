@@ -21,6 +21,7 @@ from autosrt_aligner.models import (
 from autosrt_aligner.pipeline_v2 import run_alignment_job_v2
 from autosrt_aligner.pipeline_v2 import (
     _align_chunk_with_retry,
+    _align_full,
     _align_source,
     _anchor_chunk_to_previous,
     _chunk_alignment,
@@ -33,6 +34,34 @@ from autosrt_aligner.profiles import resolve_profile
 
 
 class V2CoreTests(unittest.TestCase):
+    def test_full_alignment_keeps_probed_audio_duration(self):
+        class ShortDurationEngine:
+            def align(self, audio_path, cleaned_text, language, logs):
+                tokens = [
+                    AlignmentToken(char, index * 0.2, index * 0.2 + 0.14, index, index + 1, 0.9)
+                    for index, char in enumerate(cleaned_text.display_text)
+                    if not char.isspace()
+                ]
+                return AlignmentResult(
+                    tokens=tokens,
+                    raw={"engine": "short-duration-fixture"},
+                    audio_duration=1.0,
+                    language=language,
+                )
+
+        source = build_source_document("这是完整原文。", "zh")
+        chunks, _alignments, duration = _align_full(
+            engine=ShortDurationEngine(),
+            source=source,
+            align_audio_path=Path("/missing/audio.wav"),
+            audio_duration=1.2,
+            language="zh",
+            logs=[],
+        )
+
+        self.assertEqual(duration, 1.2)
+        self.assertEqual(chunks[0].audio_end, 1.2)
+
     def test_strict_mapping_rejects_unmatched_engine_text(self):
         source = build_source_document("这是第一句。", "zh")
         with self.assertRaises(AlignmentError):
@@ -809,7 +838,9 @@ class V2CoreTests(unittest.TestCase):
             self.assertEqual(result.quality_report["source_token_coverage"], 1.0)
             self.assertEqual(result.quality_report["audio_duration"], 8.36)
             self.assertTrue(result.srt_path.exists())
+            self.assertEqual(result.cues[-1].end, 8.36)
             srt = result.srt_path.read_text(encoding="utf-8")
+            self.assertIn("00:00:08,360", srt)
             self.assertIn("决定", srt)
             self.assertNotIn("决定。", srt)
             alignment = json.loads(result.alignment_json_path.read_text(encoding="utf-8"))
@@ -819,6 +850,7 @@ class V2CoreTests(unittest.TestCase):
             self.assertEqual(alignment["chunks"][0]["core_source_start"], 0)
             self.assertEqual(alignment["chunk_evidence"][0]["effective_audio_start"], 0.0)
             self.assertEqual(alignment["chunk_evidence"][0]["effective_audio_end"], 8.36)
+            self.assertEqual(alignment["cues"][-1]["end"], 8.36)
 
     def test_v2_pipeline_supports_four_required_languages(self):
         cases = {
