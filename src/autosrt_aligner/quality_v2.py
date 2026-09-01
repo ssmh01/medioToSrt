@@ -16,11 +16,8 @@ from .models import (
     SubtitleProfile,
 )
 from .reconcile import ReconcileReport
-from .segmenter_v2 import _is_safe_boundary
+from .segmenter_v2 import _exceeds_reading_speed_limit, _is_safe_boundary
 from .text import normalize_for_compare, validate_subtitle_continuity
-
-TERMINAL_JA_CPS_TOLERANCE = 1.0
-TERMINAL_CUE_MIN_EVIDENCE_SECONDS = 0.5
 
 
 def build_v2_quality_report(
@@ -247,20 +244,15 @@ def _segmentation_issues(
         compact_length = len("".join(cue.text.split()))
         if compact_length > profile.max_chars_total:
             issues.append("存在超过字符上限的 cue")
-        reading_length = _reading_char_count(cue.text)
-        reading_speed = reading_length / cue.duration if cue.duration > 0 else 0.0
-        terminal_ja_exception = (
-            source.language == "ja"
-            and index == len(cues) - 1
-            and cue.duration >= TERMINAL_CUE_MIN_EVIDENCE_SECONDS
-            and reading_speed <= profile.max_chars_per_second + TERMINAL_JA_CPS_TOLERANCE
-        )
         if (
             cue.duration > 0
-            # Do not reject a cue that only exceeds the limit because of
-            # floating-point rounding at the configured boundary.
-            and reading_speed > profile.max_chars_per_second + 0.001
-            and not terminal_ja_exception
+            and _exceeds_reading_speed_limit(
+                cue.text,
+                cue.duration,
+                profile,
+                source.language,
+                is_terminal=index == len(cues) - 1,
+            )
         ):
             issues.append("存在超过阅读速度上限的 cue")
     for cue in cues[:-1]:

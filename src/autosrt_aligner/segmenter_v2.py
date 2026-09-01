@@ -20,6 +20,9 @@ ZH_BAD_EDGE = set("的地得把被和与跟在是就也都要会能很又还再"
 JA_BAD_EDGE = set("はがをにでもとのへやもねよからまで")
 JA_SMALL_KANA = set("っゃゅょぁぃぅぇぉッャュョァィゥェォー")
 EN_BAD_EDGE = {"a", "an", "the", "of", "to", "in", "on", "at", "for", "and", "or"}
+MAX_MERGED_INTERNAL_GAP_SECONDS = 0.8
+TERMINAL_JA_CPS_TOLERANCE = 1.0
+TERMINAL_CUE_MIN_EVIDENCE_SECONDS = 0.5
 
 
 def segment_cues(
@@ -63,6 +66,7 @@ def segment_cues(
         token_start = token_end + 1
 
     cues = _repair_korean_timing(cues, source.language, profile)
+    cues = _merge_korean_fast_cues(source, cues, profile)
     if not cues or not validate_subtitle_continuity(cues, source.display_text):
         raise AlignmentError("语义切分结果无法连续覆盖原文")
     return cues
@@ -101,6 +105,88 @@ def _repair_korean_timing(
     return repaired
 
 
+def _merge_korean_fast_cues(
+    source: SourceDocument,
+    cues: list[SubtitleCue],
+    profile: SubtitleProfile,
+) -> list[SubtitleCue]:
+    """Merge an isolated fast Korean cue when a compliant adjacent span exists.
+
+    This keeps all token timestamps intact. A merge is allowed only when the
+    combined cue still satisfies the configured duration, character, and
+    reading-speed limits. Weak boundaries are removed before punctuation-led
+    sentence boundaries so readability is not traded for a passing report.
+    """
+
+    if source.language != "ko" or len(cues) < 2 or profile.max_chars_per_second <= 0:
+        return cues
+
+    repaired = list(cues)
+    index = 0
+    while index < len(repaired):
+        cue = repaired[index]
+        reading_speed = _reading_char_count(cue.text) / max(cue.duration, 0.1)
+        if reading_speed <= profile.max_chars_per_second + 0.001:
+            index += 1
+            continue
+
+        candidates: list[tuple[tuple[float, ...], int, SubtitleCue]] = []
+        for merge_start in (index - 1, index):
+            if merge_start < 0 or merge_start + 1 >= len(repaired):
+                continue
+            left, right = repaired[merge_start : merge_start + 2]
+            if right.start - left.end > MAX_MERGED_INTERNAL_GAP_SECONDS + 0.001:
+                continue
+            text = render_display_segment(
+                source.display_text[left.start_char : right.end_char]
+            )
+            merged = SubtitleCue(
+                index=left.index,
+                start=left.start,
+                end=right.end,
+                text=text,
+                start_char=left.start_char,
+                end_char=right.end_char,
+            )
+            merged_speed = _reading_char_count(text) / max(merged.duration, 0.1)
+            if (
+                merged.duration > profile.max_duration + 0.001
+                or len("".join(text.split())) > profile.max_chars_total
+                or merged_speed > profile.max_chars_per_second + 0.001
+            ):
+                continue
+            removed_boundary = right.start_char
+            boundary_char = _previous_visible(source.display_text, removed_boundary)
+            boundary_penalty = (
+                2.0
+                if boundary_char in STRONG_PUNCT
+                else 1.0
+                if boundary_char in MID_PUNCT
+                else 0.0
+            )
+            ideal_mid = (profile.ideal_min_duration + profile.ideal_max_duration) / 2
+            candidates.append(
+                (
+                    (
+                        boundary_penalty,
+                        abs(merged.duration - ideal_mid),
+                        merged_speed,
+                    ),
+                    merge_start,
+                    merged,
+                )
+            )
+        if not candidates:
+            index += 1
+            continue
+
+        _, merge_start, merged = min(candidates, key=lambda item: item[0])
+        repaired[merge_start : merge_start + 2] = [merged]
+        index = max(0, merge_start - 1)
+
+    return [replace(cue, index=index + 1) for index, cue in enumerate(repaired)]
+
+
 def _best_path(
     source: SourceDocument,
     tokens: list[AlignmentToken],
@@ -127,6 +213,14 @@ def _best_path(
             if not math.isfinite(costs[end + 1]):
                 continue
             text = source.display_text[start_char:char_end]
+            if _exceeds_reading_speed_limit(
+                text,
+                duration,
+                profile,
+                source.language,
+                is_terminal=end == count - 1,
+            ):
+                continue
             candidate_cost = _boundary_cost(
                 source.display_text,
                 char_end,
@@ -282,3 +376,23 @@ def _reading_char_count(value: str) -> int:
         for char in value
         if not char.isspace() and not unicodedata.category(char).startswith("P")
     )
+
+
+def _exceeds_reading_speed_limit(
+    text: str,
+    duration: float,
+    profile: SubtitleProfile,
+    language: str,
+    *,
+    is_terminal: bool,
+) -> bool:
+    if duration <= 0 or profile.max_chars_per_second <= 0:
+        return False
+    limit = profile.max_chars_per_second
+    if (
+        language == "ja"
+        and is_terminal
+        and duration >= TERMINAL_CUE_MIN_EVIDENCE_SECONDS
+    ):
+        limit += TERMINAL_JA_CPS_TOLERANCE
+    return _reading_char_count(text) / duration > limit + 0.001

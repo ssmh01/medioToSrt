@@ -28,7 +28,11 @@ from autosrt_aligner.pipeline_v2 import (
 )
 from autosrt_aligner.quality_v2 import _timing_issues, build_v2_quality_report
 from autosrt_aligner.reconcile import ReconcileReport, reconcile_chunk_alignments
-from autosrt_aligner.segmenter_v2 import _repair_korean_timing, segment_cues
+from autosrt_aligner.segmenter_v2 import (
+    _merge_korean_fast_cues,
+    _repair_korean_timing,
+    segment_cues,
+)
 from autosrt_aligner.text import build_source_document, map_tokens_to_source_strict
 from autosrt_aligner.profiles import resolve_profile
 
@@ -564,6 +568,54 @@ class V2CoreTests(unittest.TestCase):
                 and text[cue.end_char : cue.end_char + 1].isalnum()
             )
 
+    def test_japanese_segmenter_avoids_nonterminal_fast_cue(self):
+        parts = [
+            ("皆さんの中にも、覚えのある方、", 0.0, 2.08),
+            ("いらっしゃるんじゃないでしょうか。", 2.08, 3.36),
+            ("行くよ、と言った日に、", 3.92, 5.28),
+        ]
+        text = "".join(part for part, _start, _end in parts)
+        tokens = []
+        char_offset = 0
+        for part, start, end in parts:
+            spoken_chars = [
+                (index, char)
+                for index, char in enumerate(part)
+                if not char.isspace()
+                and not unicodedata.category(char).startswith("P")
+            ]
+            step = (end - start) / len(spoken_chars)
+            tokens.extend(
+                AlignmentToken(
+                    char,
+                    start + token_index * step,
+                    start + (token_index + 1) * step,
+                    char_offset + char_index,
+                    char_offset + char_index + 1,
+                    None,
+                    "chunk-001",
+                )
+                for token_index, (char_index, char) in enumerate(spoken_chars)
+            )
+            char_offset += len(part)
+
+        profile = resolve_profile("youtube_long", "ja")
+        cues = segment_cues(build_source_document(text, "ja"), tokens, profile)
+
+        self.assertTrue(validate_text(cues, text))
+        self.assertEqual(cues[0].text, parts[0][0] + parts[1][0])
+        for cue in cues[:-1]:
+            spoken_count = sum(
+                1
+                for char in cue.text
+                if not char.isspace()
+                and not unicodedata.category(char).startswith("P")
+            )
+            self.assertLessEqual(
+                spoken_count / cue.duration,
+                profile.max_chars_per_second + 0.001,
+            )
+
     def test_korean_timing_repair_borrows_only_available_gap(self):
         profile = resolve_profile("youtube_long", "ko")
         text = "믹스커피를 종이컵에 타다 줬어요. 다음 문장입니다."
@@ -587,6 +639,57 @@ class V2CoreTests(unittest.TestCase):
             profile.max_chars_per_second + 0.001,
         )
         self.assertEqual(repaired[1], cues[1])
+
+    def test_korean_fast_cue_merges_across_weaker_boundary(self):
+        text = (
+            "집에 있으면 온종일 입 한 번 뗄 일이 없다는 게 "
+            "더 무서워서 이름을 적었습니다. "
+            "진우가 펄쩍 뛰었지요."
+        )
+        fast_start = text.index("더")
+        next_start = text.index("진우가")
+        cues = [
+            SubtitleCue(1, 981.68, 984.64, text[:fast_start], 0, fast_start),
+            SubtitleCue(2, 984.96, 986.16, text[fast_start:next_start], fast_start, next_start),
+            SubtitleCue(3, 986.16, 988.32, text[next_start:], next_start, len(text)),
+        ]
+        source = build_source_document(text, "ko")
+        profile = resolve_profile("youtube_long", "ko")
+        repaired = _merge_korean_fast_cues(source, cues, profile)
+
+        self.assertTrue(validate_text(repaired, text))
+        self.assertEqual(len(repaired), 2)
+        self.assertEqual(
+            repaired[0].text,
+            "집에 있으면 온종일 입 한 번 뗄 일이 없다는 게 더 무서워서 이름을 적었습니다.",
+        )
+        for cue in repaired:
+            spoken_chars = sum(
+                1
+                for char in cue.text
+                if not char.isspace()
+                and not unicodedata.category(char).startswith("P")
+            )
+            self.assertLessEqual(
+                spoken_chars / cue.duration,
+                profile.max_chars_per_second + 0.001,
+            )
+
+    def test_korean_fast_cue_merge_does_not_bridge_large_silence(self):
+        text = "앞 문장입니다. 너무 빠른 문장입니다."
+        split_at = text.index("너무")
+        cues = [
+            SubtitleCue(1, 0.0, 1.5, text[:split_at], 0, split_at),
+            SubtitleCue(2, 3.0, 3.5, text[split_at:], split_at, len(text)),
+        ]
+
+        repaired = _merge_korean_fast_cues(
+            build_source_document(text, "ko"),
+            cues,
+            resolve_profile("youtube_long", "ko"),
+        )
+
+        self.assertEqual(repaired, cues)
 
     def test_segmenter_respects_four_language_boundary_rules(self):
         cases = [
