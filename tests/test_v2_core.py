@@ -104,6 +104,36 @@ class V2CoreTests(unittest.TestCase):
         self.assertEqual(mapped[1].start_char, five_index)
         self.assertEqual(mapped[1].end_char, six_end)
 
+    def test_strict_mapping_ignores_nonspoken_layout_symbols(self):
+        source = build_source_document("思ったんです。──あれ。月○○円", "ja")
+        mapped = map_tokens_to_source_strict(
+            [
+                AlignmentToken("思ったんです", 0.0, 0.8),
+                AlignmentToken("あれ", 0.8, 1.0),
+                AlignmentToken("月", 1.0, 1.2),
+                AlignmentToken("円", 1.2, 1.4),
+            ],
+            source,
+        )
+
+        self.assertNotIn("─", source.align_text)
+        self.assertNotIn("○", source.align_text)
+        self.assertEqual(mapped[1].start_char, source.display_text.index("あれ"))
+        chunk = AudioChunk(
+            "chunk-001",
+            0,
+            len(source.display_text),
+            0.0,
+            1.0,
+            core_source_start=0,
+            core_source_end=len(source.display_text),
+        )
+        _, report = reconcile_chunk_alignments(
+            [ChunkAlignment(chunk, mapped, "test")],
+            source,
+        )
+        self.assertEqual(report.source_token_coverage, 1.0)
+
     def test_chunk_planner_covers_long_source_with_audio_overlap(self):
         text = "这是一个很长的中文段落，用来验证分块规划。" * 80
         source = build_source_document(text, "zh")

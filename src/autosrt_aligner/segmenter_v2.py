@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import math
 import re
-import unicodedata
 from dataclasses import replace
 
 from .errors import AlignmentError
 from .models import AlignmentToken, SourceDocument, SubtitleCue, SubtitleProfile
 from .profiles import language_group
-from .text import render_display_segment, validate_subtitle_continuity
+from .text import (
+    is_nonspoken_alignment_char,
+    render_display_segment,
+    validate_subtitle_continuity,
+)
 
 STRONG_PUNCT = set("。！？!?…．.")
 MID_PUNCT = set("，、,;；:：")
@@ -371,11 +374,7 @@ def _has_boundary_space(text: str, char_end: int) -> bool:
 
 
 def _reading_char_count(value: str) -> int:
-    return sum(
-        1
-        for char in value
-        if not char.isspace() and not unicodedata.category(char).startswith("P")
-    )
+    return sum(1 for char in value if not is_nonspoken_alignment_char(char))
 
 
 def _exceeds_reading_speed_limit(

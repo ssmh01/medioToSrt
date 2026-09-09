@@ -11,6 +11,7 @@ from .models import AlignmentToken, CleanedText, SourceDocument, SubtitleCue
 
 ZERO_WIDTH = {"\u200b", "\u200c", "\u200d", "\ufeff"}
 MARKDOWN_NOISE = set("#>*_`~")
+ALIGNMENT_NOISE = MARKDOWN_NOISE | set("─○")
 
 
 def clean_script_text(script_text: str, preserve_punctuation: bool = True) -> CleanedText:
@@ -27,7 +28,7 @@ def clean_script_text(script_text: str, preserve_punctuation: bool = True) -> Cl
     align_to_display: list[int] = []
     last_was_space = False
     for idx, ch in enumerate(display):
-        if ch in MARKDOWN_NOISE:
+        if ch in ALIGNMENT_NOISE:
             continue
         if not preserve_punctuation and unicodedata.category(ch).startswith("P"):
             continue
@@ -72,7 +73,7 @@ def build_source_document(
 
 
 def normalize_for_alignment(value: str) -> str:
-    cleaned = "".join(ch for ch in value if ch not in ZERO_WIDTH and ch not in MARKDOWN_NOISE)
+    cleaned = "".join(ch for ch in value if ch not in ZERO_WIDTH and ch not in ALIGNMENT_NOISE)
     cleaned = unicodedata.normalize("NFC", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned)
     return cleaned.strip()
@@ -157,7 +158,7 @@ def map_tokens_to_source_strict(
             )
         align_index, align_end = token_span
         skipped = source.align_text[cursor:align_index]
-        if any(not _is_ignorable_alignment_gap(char) for char in skipped):
+        if any(not is_nonspoken_alignment_char(char) for char in skipped):
             raise AlignmentError(
                 f"对齐 token 跳过了原文内容: {skipped[:24]!r}"
             )
@@ -183,15 +184,15 @@ def map_tokens_to_source_strict(
     if not mapped:
         raise AlignmentError("对齐结果没有可映射 token")
     trailing = source.align_text[cursor:]
-    if any(not _is_ignorable_alignment_gap(char) for char in trailing):
+    if any(not is_nonspoken_alignment_char(char) for char in trailing):
         raise AlignmentError(
             f"对齐 token 未覆盖原文尾部: {trailing[:24]!r}"
         )
     return mapped
 
 
-def _is_ignorable_alignment_gap(char: str) -> bool:
-    return char.isspace() or unicodedata.category(char).startswith("P") or char in MARKDOWN_NOISE
+def is_nonspoken_alignment_char(char: str) -> bool:
+    return char.isspace() or unicodedata.category(char).startswith("P") or char in ALIGNMENT_NOISE
 
 
 def _find_token_span(source_text: str, token_text: str, cursor: int) -> tuple[int, int] | None:
@@ -207,7 +208,7 @@ def _find_token_span(source_text: str, token_text: str, cursor: int) -> tuple[in
     if direct_index >= 0:
         return direct_index, direct_index + len(token_text)
     token_text = "".join(
-        char for char in token_text if not _is_ignorable_alignment_gap(char)
+        char for char in token_text if not is_nonspoken_alignment_char(char)
     )
     if not token_text:
         return None
@@ -215,14 +216,14 @@ def _find_token_span(source_text: str, token_text: str, cursor: int) -> tuple[in
     for start in range(cursor, len(source_text)):
         if source_text[start] != token_text[0]:
             continue
-        if any(not _is_ignorable_alignment_gap(char) for char in source_text[cursor:start]):
+        if any(not is_nonspoken_alignment_char(char) for char in source_text[cursor:start]):
             continue
 
         source_index = start
         token_index = 0
         while source_index < len(source_text) and token_index < len(token_text):
             source_char = source_text[source_index]
-            if _is_ignorable_alignment_gap(source_char):
+            if is_nonspoken_alignment_char(source_char):
                 source_index += 1
                 continue
             if source_char != token_text[token_index]:

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-import unicodedata
 from statistics import mean
 from typing import Any
 
@@ -17,7 +16,11 @@ from .models import (
 )
 from .reconcile import ReconcileReport
 from .segmenter_v2 import _exceeds_reading_speed_limit, _is_safe_boundary
-from .text import normalize_for_compare, validate_subtitle_continuity
+from .text import (
+    is_nonspoken_alignment_char,
+    normalize_for_compare,
+    validate_subtitle_continuity,
+)
 
 
 def build_v2_quality_report(
@@ -264,11 +267,7 @@ def _segmentation_issues(
 def _reading_char_count(value: str) -> int:
     """Count spoken characters; whitespace and punctuation have no voice time."""
 
-    return sum(
-        1
-        for char in value
-        if not char.isspace() and not unicodedata.category(char).startswith("P")
-    )
+    return sum(1 for char in value if not is_nonspoken_alignment_char(char))
 
 
 def _text_ratio(cues: list[SubtitleCue], display_text: str) -> float:

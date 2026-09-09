@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import math
-import unicodedata
 from bisect import bisect_right
 from dataclasses import dataclass
 
 from .models import AlignmentToken, ChunkAlignment, SourceDocument
-from .text import normalize_for_alignment
+from .text import is_nonspoken_alignment_char, normalize_for_alignment
 
 
 @dataclass(frozen=True)
@@ -443,7 +442,7 @@ def _required_positions(source: SourceDocument) -> set[int]:
     return {
         index
         for index, char in enumerate(source.display_text)
-        if not char.isspace() and not unicodedata.category(char).startswith("P")
+        if not is_nonspoken_alignment_char(char)
     }
 
 
