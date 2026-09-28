@@ -205,7 +205,9 @@ def _find_token_span(source_text: str, token_text: str, cursor: int) -> tuple[in
     """
 
     direct_index = source_text.find(token_text, cursor)
-    if direct_index >= 0:
+    if direct_index >= 0 and all(
+        is_nonspoken_alignment_char(char) for char in source_text[cursor:direct_index]
+    ):
         return direct_index, direct_index + len(token_text)
     token_text = "".join(
         char for char in token_text if not is_nonspoken_alignment_char(char)

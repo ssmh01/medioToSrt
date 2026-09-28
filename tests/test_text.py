@@ -5,6 +5,7 @@ import unittest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 from autosrt_aligner.models import AlignmentToken, SubtitleCue
+from autosrt_aligner.errors import AlignmentError
 from autosrt_aligner.text import (
     build_source_document,
     clean_script_text,
@@ -42,6 +43,32 @@ class TextTests(unittest.TestCase):
         )
         self.assertEqual(mapped[0].start_char, 0)
         self.assertEqual(mapped[0].end_char, 1)
+
+    def test_strict_mapping_matches_next_source_span_before_later_exact_match(self):
+        cases = [
+            ("ko", '참"이 붙어 있어서, 참이 좋다.', ["참이", "붙어 있어서", "참이", "좋다"], 3),
+            ("ja", "五、六軒。五六軒。", ["五六軒", "五六軒"], 4),
+            ("zh", "一、两天。一两天。", ["一两天", "一两天"], 4),
+            ("en", "good bye, goodbye.", ["goodbye", "goodbye"], 8),
+        ]
+        for language, text, words, first_end in cases:
+            with self.subTest(language=language):
+                source = build_source_document(text, language)
+                tokens = [AlignmentToken(word, i, i + 0.5) for i, word in enumerate(words)]
+                mapped = map_tokens_to_source_strict(tokens, source, source_offset=30)
+                self.assertEqual(mapped[0].start_char, 30)
+                self.assertEqual(mapped[0].end_char, 30 + first_end)
+                self.assertEqual(mapped[1].start_char, 30 + text.index(words[1], first_end))
+                self.assertEqual(mapped[-1].start, tokens[-1].start)
+                self.assertEqual(mapped[-1].end, tokens[-1].end)
+
+    def test_strict_mapping_rejects_missing_spoken_text_before_repeated_token(self):
+        source = build_source_document('참"이 빠진 내용 참이', "ko")
+        with self.assertRaises(AlignmentError):
+            map_tokens_to_source_strict(
+                [AlignmentToken("참이", 0.0, 0.5), AlignmentToken("참이", 0.5, 1.0)],
+                source,
+            )
 
     def test_validate_subtitle_continuity_ignores_layout_whitespace(self):
         display = "第一句。\n第二句。"
