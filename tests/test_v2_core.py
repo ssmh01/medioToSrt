@@ -1031,7 +1031,10 @@ class V2CoreTests(unittest.TestCase):
                 if language == "zh-TW":
                     self.assertEqual(result.alignment_payload["source"]["language"], "zh")
                 if language == "en":
-                    self.assertIn("table.", srt)
+                    self.assertIn("table\n", srt)
+                    self.assertIn("table\n", vtt)
+                    self.assertNotIn("table.", srt)
+                    self.assertNotIn("table.", vtt)
                 elif language == "ko":
                     self.assertNotIn(".", srt)
                     self.assertIn(".", vtt)

@@ -218,7 +218,14 @@ def run_alignment_job_v2(
     vtt_path = None
     if generate_vtt:
         vtt_path = out_dir / "output.vtt"
-        vtt_path.write_text(export_vtt(cues), encoding="utf-8")
+        vtt_path.write_text(
+            export_vtt(
+                cues,
+                language=language,
+                clean_punctuation=preserve_punctuation is not True,
+            ),
+            encoding="utf-8",
+        )
     logs.append("V2 质量门禁通过，导出完成")
 
     return JobResult(

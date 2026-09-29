@@ -229,7 +229,7 @@ def run_alignment_job(
     vtt_path = None
     if generate_vtt:
         vtt_path = out_dir / "output.vtt"
-        vtt_path.write_text(export_vtt(cues), encoding="utf-8")
+        vtt_path.write_text(export_vtt(cues, language=language), encoding="utf-8")
 
     alignment_payload = _build_alignment_payload(
         cleaned_display=cleaned.display_text,
