@@ -79,6 +79,9 @@ def resolve_profile(
         default_min, default_max = 1.2, 6.0
     else:
         default_min, default_max = 1.2, 6.0 if group == "en" else 6.5
+        if group == "ja":
+            default_max = 5.0
+            base_total = 26
 
     effective_min = min_duration if min_duration is not None else default_min
     effective_max = max_duration if max_duration is not None else default_max

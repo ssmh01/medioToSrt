@@ -629,7 +629,7 @@ class V2CoreTests(unittest.TestCase):
             )
             char_offset += len(part)
 
-        profile = resolve_profile("youtube_long", "ja")
+        profile = resolve_profile("youtube_long", "ja", max_chars_total=34)
         cues = segment_cues(build_source_document(text, "ja"), tokens, profile)
 
         self.assertTrue(validate_text(cues, text))
