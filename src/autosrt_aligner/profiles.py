@@ -50,7 +50,7 @@ def resolve_profile(
     group = language_group(language)
     if group == "en":
         base_line = 42
-        base_total = 84
+        base_total = 60
         cps = 20.0
     elif group == "ja":
         base_line = 17
@@ -68,7 +68,8 @@ def resolve_profile(
     if profile_key == "short":
         default_min, default_max = 1.0, 4.2
         base_line = max(10, int(base_line * 0.82))
-        base_total = max(base_line, int(base_total * 0.78))
+        if group != "en":
+            base_total = max(base_line, int(base_total * 0.78))
     elif profile_key == "slow_elder":
         default_min, default_max = 1.5, 7.0
         base_line = max(10, int(base_line * 0.9))
@@ -78,10 +79,13 @@ def resolve_profile(
     elif profile_key == "standard":
         default_min, default_max = 1.2, 6.0
     else:
-        default_min, default_max = 1.2, 6.0 if group == "en" else 6.5
+        default_min, default_max = 1.2, 6.5
         if group == "ja":
             default_max = 5.0
             base_total = 26
+
+    if group == "en":
+        default_max = 5.0
 
     effective_min = min_duration if min_duration is not None else default_min
     effective_max = max_duration if max_duration is not None else default_max

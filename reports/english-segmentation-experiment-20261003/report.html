@@ -1,0 +1,1527 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>英语字幕切分历史实验 · 2026-10-03</title><style>
+:root{font-family:system-ui,-apple-system,"PingFang SC",sans-serif;color:#243141;background:#f1f4f8}body{max-width:1240px;margin:auto;padding:32px}h1{font-size:30px}h2{margin-top:36px}p,li{line-height:1.7}a{color:#1464ab}article,section,.notice{background:white;border:1px solid #d6dfe8;border-radius:12px;padding:20px;margin:18px 0}.notice{border-left:5px solid #a46222}.cards{display:flex;gap:16px;flex-wrap:wrap}.card{flex:1;min-width:170px;background:#fff;padding:18px;border-radius:12px;border:1px solid #d6dfe8}.card strong{display:block;font-size:25px;margin:8px 0}.table-wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:14px;background:#fff}td,th{text-align:left;border:1px solid #dce4ec;padding:10px;vertical-align:top}th{background:#e8eff5}.pair{display:grid;grid-template-columns:1fr 1fr;gap:16px}pre{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6;background:#f3f6f9;padding:12px;font-size:13px}small{color:#53687b}details{background:white;border:1px solid #d6dfe8;border-radius:8px;margin:10px 0;padding:12px}summary{cursor:pointer;font-weight:600}.better{color:#16714a}.worse{color:#a33526}.mixed{color:#996214}.toolbar{position:sticky;top:0;background:#f1f4f8;padding:12px 0}select{padding:8px;font-size:15px}@media(max-width:800px){body{padding:15px}.pair{grid-template-columns:1fr}}
+</style></head><body><section class="notice"><b>应用状态更新：本版英语优化已接入并重启本地服务。</b><p>117 项测试通过；6 份英语长视频与冻结候选一致；其他语言 64 组输出保持一致。以下保留应用前的实验记录及当时的结论，完整接入结果见 <a href="../english-segmentation-application-20261003.json">应用验证记录</a>。</p></section><h1>英语字幕切分优化：历史实验结果</h1>
+<p>2026-10-03 · 固定 5 秒 / 60 个非空白字符 · 5 个历史项目 + 当前样本回归</p>
+<div class="notice"><b>结论：历史文字对比有实际局部改善，但存在退步，尚不适合直接替换现有算法。</b><p>通用句法保护减少了部分悬空短语；固定历史抽样 40 段中 12 段改善、25 段基本持平、3 段有取舍。变化位置另发现 1 处明确退步。候选已冻结并保存在实验包中，当前服务继续使用现行切分逻辑。</p></div>
+<div class="cards"><div class="card">历史项目<strong>5 份 / 115.4 分钟</strong><small>117,523 个原文字符</small></div><div class="card">历史固定抽样<strong>12 改善 / 40 段</strong><small>25 基本持平、3 有取舍</small></div><div class="card">原文与时间约束<strong>12 / 12 通过</strong><small>两版 × 六份输入</small></div></div>
+<p><a href="design.txt">完整方案</a> · <a href="summary.json">机器可读证据</a> · <a href="metrics.csv">逐项目指标</a> · <a href="candidate.patch">实验候选差异</a> · <a href="experiment.zip">复现实验包</a></p>
+<h2>1. 方案为何这样设计</h2>
+<p>旧算法已使用句法分析和全局动态规划，但句法原子缺少真实英语句界限制，某些解析器误连会跨句保护；动词与介词、程度修饰和介词与补足语保护不足。只增加这些连接的罚分，会把坏切点移到别处，或增加句尾混入下一句的情况。</p>
+<ol><li><b>先在真实句界内建模：</b>沿用现有缩写识别，丢弃跨已识别句末的依存单位。</li><li><b>增加通用语法单位：</b>程度修饰、谓语与介词、动词与代词宾语、介词与补足语；不增加样本文案表达列表。</li><li><b>区分短核心和宽连接：</b>短核心跨度最多 40 个字符；局部关系有距离限制。不是把所有介词都设成禁切位置。</li><li><b>比较整段最优路径：</b>原硬约束 → 短核心内部切分数 → 句尾接未完成下句数 → 宽短语内部切分数 → 原有阅读节奏和长度分数。</li></ol>
+<p>这是一版供验证的实验候选。核心优先级仍可能压制主谓节奏；实验结果已显示这一缺陷，见下方 R063。候选尚未接入英语业务分支，也没有完成其他语言的回归验证。</p>
+<h2>2. 比较条件与样本</h2>
+<p>两版均使用现有对齐 token 的文字位置和时间端点；没有重跑对齐、改写原文、拉伸时间或重新生成声音。一般最短时长 1.2 秒，完整短句沿用 0.8 秒例外，最长 5 秒、每条最多 60 个非空白字符、阅读速度上限 20 字符/秒。尾条沿用真实音频结束时间。</p>
+<p>基线是当前算法按同一设置重新切分所得结果，避免把默认参数变化误算成切分算法的收益。此前当前样本的 50 字符结果是 153 条；本轮同为 60 字符时是 136 → 137 条。</p>
+<div class="table-wrap"><table><thead><tr><th>内容描述（非项目原始标题）</th><th>输入标识</th><th>用途</th><th>原文字数</th><th>音频分钟</th></tr></thead><tbody><tr><td>采猎生活科普</td><td>en-96ebf8e24761</td><td>冻结后验证集</td><td>14094</td><td>12.64</td></tr><tr><td>养老院家庭叙事</td><td>en-da47bc4a61d2</td><td>开发集</td><td>28218</td><td>28.92</td></tr><tr><td>退休金与朋友叙事</td><td>en-711bb43eb2b0</td><td>开发集</td><td>28066</td><td>28.40</td></tr><tr><td>史前音乐与游戏科普</td><td>en-c9b85a6b4091</td><td>冻结后验证集</td><td>18547</td><td>16.92</td></tr><tr><td>家庭储蓄叙事</td><td>en-4b8ef45c3595</td><td>开发集</td><td>28598</td><td>28.48</td></tr><tr><td>当前心理学解说（回归）</td><td>en-psychology-current</td><td>当前样本回归</td><td>6769</td><td>6.06</td></tr></tbody></table></div><p>先在 3 个历史开发项目比较不同机制；候选于 <b>2026-10-03T16:31:54.691553+08:00</b> 记录 SHA256 后冻结，随后运行 2 个历史验证项目和当前心理学回归样本。冻结后未修改候选。历史验证内容此前曾被查看，因此不能称为未见内容测试。</p><h2>3. 文字评审结果</h2><p>每份内容按原文位置分层随机抽 8 个固定窗口，选择不依赖候选的切点变化。再从变化位置抽 6 个窗口检查收益及退步。A/B 标识随机打乱，同一助手自评，先记录意见再解码；不是独立人工盲测。每个窗口附带前后一条字幕作为上下文，窗口边缘也可能出现变化。</p><div class="table-wrap"><table><thead><tr><th>范围</th><th>抽样方式</th><th>段数</th><th>改善</th><th>基本持平</th><th>有取舍</th><th>退步</th></tr></thead><tbody><tr><td>五个历史项目</td><td>固定位置抽样</td><td>40</td><td>12</td><td>25</td><td>3</td><td>0</td></tr><tr><td>五个历史项目</td><td>变化位置抽查</td><td>30</td><td>24</td><td>1</td><td>4</td><td>1</td></tr><tr><td>其中：开发集</td><td>固定位置抽样</td><td>24</td><td>4</td><td>19</td><td>1</td><td>0</td></tr><tr><td>其中：开发集</td><td>变化位置抽查</td><td>18</td><td>15</td><td>1</td><td>1</td><td>1</td></tr><tr><td>其中：冻结后验证集</td><td>固定位置抽样</td><td>16</td><td>8</td><td>6</td><td>2</td><td>0</td></tr><tr><td>其中：冻结后验证集</td><td>变化位置抽查</td><td>12</td><td>9</td><td>0</td><td>3</td><td>0</td></tr><tr><td>当前样本回归</td><td>固定位置抽样</td><td>8</td><td>5</td><td>3</td><td>0</td><td>0</td></tr><tr><td>当前样本回归</td><td>变化位置抽查</td><td>6</td><td>5</td><td>0</td><td>1</td><td>0</td></tr><tr><td>全部六份</td><td>固定位置抽样</td><td>48</td><td>17</td><td>28</td><td>3</td><td>0</td></tr><tr><td>全部六份</td><td>变化位置抽查</td><td>36</td><td>29</td><td>1</td><td>5</td><td>1</td></tr></tbody></table></div><p><b>变化位置抽查不能作为一般胜率：</b>该集合特意富集发生变化的位置，可能与固定窗口重叠。不能将两组简单合并，或把“自动风险指标下降”当成真实语义错误减少。固定样本中的持平段落也保留在分母中。</p><h2>4. 五个历史项目的配对指标</h2><div class="table-wrap"><table><thead><tr><th>指标</th><th>现行</th><th>候选</th><th>含义</th></tr></thead><tbody><tr><td>字幕条数</td><td>2496</td><td>2513</td><td>条数增加 17，不以更少或更多条数直接判好坏</td></tr><tr><td>新增关系内部切点候选</td><td>70</td><td>6</td><td>代理指标；部分位置并不一定有语义错误</td></tr><tr><td>句尾接未完成下句</td><td>23</td><td>17</td><td>只覆盖部分句尾/句首混合类型，漏掉 R063 这类退步</td></tr><tr><td>低于 2 秒的字幕</td><td>739</td><td>763</td><td>短字幕增加 24，提示阅读节奏的代价</td></tr><tr><td>旧短语原子内部切点</td><td>15</td><td>22</td><td>有恶化；包含旧规则的跨句误连，仍需结合文字复核</td></tr><tr><td>无标点切点</td><td>390</td><td>376</td><td>弱标点位置切分数量，不能单独代表自然度</td></tr></tbody></table></div><h3>逐项目：现行 → 候选</h3><div class="table-wrap"><table><thead><tr><th>内容</th><th>条数</th><th>新增关系切点候选</th><th>句尾接未完成下句</th><th>&lt;2 秒字幕</th><th>旧短语内部切点</th><th>P95 阅读速度</th></tr></thead><tbody><tr><td>采猎生活科普</td><td>292 → 291</td><td>8 → 0</td><td>1 → 1</td><td>85 → 84</td><td>0 → 0</td><td>19.397 → 19.444</td></tr><tr><td>养老院家庭叙事</td><td>644 → 649</td><td>16 → 2</td><td>6 → 4</td><td>240 → 247</td><td>1 → 2</td><td>17.13 → 17.23</td></tr><tr><td>退休金与朋友叙事</td><td>580 → 583</td><td>14 → 0</td><td>5 → 3</td><td>140 → 142</td><td>2 → 4</td><td>16.797 → 16.827</td></tr><tr><td>史前音乐与游戏科普</td><td>374 → 382</td><td>21 → 2</td><td>4 → 1</td><td>94 → 106</td><td>11 → 16</td><td>18.75 → 18.75</td></tr><tr><td>家庭储蓄叙事</td><td>606 → 608</td><td>11 → 2</td><td>7 → 8</td><td>180 → 184</td><td>1 → 0</td><td>17.5 → 17.5</td></tr><tr><td>当前心理学解说（回归）</td><td>136 → 137</td><td>9 → 0</td><td>2 → 2</td><td>36 → 35</td><td>0 → 0</td><td>18.966 → 19.271</td></tr></tbody></table></div><p>家庭储蓄叙事的句尾残片计数 7 → 8；史前音乐科普的短字幕 94 → 106。当前样本 P95 阅读速度 18.966 → 19.271 字符/秒。可见这版候选没有全面改善节奏或阅读速度。</p><h2>5. 具体改善与退步</h2><article><h3>历史固定抽样：put her dad in a home 保持完整 · R014</h3><p>养老院家庭叙事 · 改善。put her dad in a home 完整，后续 and 引出第二动作。</p><div class="pair"><div><b>现行算法</b><pre>1224.82-1228.58 (3.76s): today I&#x27;ll bring it up, and then I&#x27;d look at you in that bed and I couldn&#x27;t.
+1229.06-1231.54 (2.48s): I kept thinking, I&#x27;m the daughter who put her dad
+1231.54-1234.10 (2.56s): in a home and sold his house out from under him.
+1234.34-1235.38 (1.04s): I couldn&#x27;t be that.
+1235.70-1237.38 (1.68s): So I just kept saying okay.&quot;
+1237.70-1239.30 (1.60s): I said, &quot;You didn&#x27;t put me
+1240.18-1242.26 (2.08s): anywhere, Carla.
+1242.58-1245.14 (2.56s): I walked in on a walker with the game on the radio.&quot;
+1245.38-1247.70 (2.32s): She laughed, kind of wet.
+1248.26-1250.74 (2.48s): Then she said, &quot;You said it before I had to.&quot;
+1250.98-1252.42 (1.44s): &quot;I know I did.&quot; &quot;Why?&quot;</pre></div><div><b>冻结候选</b><pre>1224.82-1228.58 (3.76s): today I&#x27;ll bring it up, and then I&#x27;d look at you in that bed and I couldn&#x27;t.
+1229.06-1232.18 (3.12s): I kept thinking, I&#x27;m the daughter who put her dad in a home
+1232.18-1234.10 (1.92s): and sold his house out from under him.
+1234.34-1235.38 (1.04s): I couldn&#x27;t be that.
+1235.70-1237.38 (1.68s): So I just kept saying okay.&quot;
+1237.70-1239.30 (1.60s): I said, &quot;You didn&#x27;t put me
+1240.18-1242.26 (2.08s): anywhere, Carla.
+1242.58-1245.14 (2.56s): I walked in on a walker with the game on the radio.&quot;
+1245.38-1247.70 (2.32s): She laughed, kind of wet.
+1248.26-1250.74 (2.48s): Then she said, &quot;You said it before I had to.&quot;
+1250.98-1252.42 (1.44s): &quot;I know I did.&quot; &quot;Why?&quot;</pre></div></div></article><article><h3>历史变化抽查：out of his garage 保持完整 · R075</h3><p>家庭储蓄叙事 · 改善。out of his garage 完整，另一版拆开 out 与 of。</p><div class="pair"><div><b>现行算法</b><pre>431.20-433.12 (1.92s): and it about knocked me out of the booth.
+433.52-434.80 (1.28s): Marvin&#x27;s seventy-nine.
+435.12-437.68 (2.56s): He drove a school bus for twenty-six years,
+437.92-440.24 (2.32s): and he&#x27;s fixed lawnmowers and snowblowers out
+440.24-443.28 (3.04s): of his garage for half the county since before I knew him.
+443.84-446.88 (3.04s): I&#x27;d always figured Marvin had money tucked away somewhere.
+447.20-448.80 (1.60s): You know how you size a man up.
+449.04-452.48 (3.44s): He drives a pickup with better than two hundred thousand miles on it,
+452.72-454.40 (1.68s): and he keeps it running himself.</pre></div><div><b>冻结候选</b><pre>431.20-433.12 (1.92s): and it about knocked me out of the booth.
+433.52-434.80 (1.28s): Marvin&#x27;s seventy-nine.
+435.12-437.68 (2.56s): He drove a school bus for twenty-six years,
+437.92-441.04 (3.12s): and he&#x27;s fixed lawnmowers and snowblowers out of his garage
+441.04-443.28 (2.24s): for half the county since before I knew him.
+443.84-446.88 (3.04s): I&#x27;d always figured Marvin had money tucked away somewhere.
+447.20-448.80 (1.60s): You know how you size a man up.
+449.04-452.48 (3.44s): He drives a pickup with better than two hundred thousand miles on it,
+452.72-454.40 (1.68s): and he keeps it running himself.</pre></div></div></article><article><h3>冻结后科普验证：living with 保持完整 · R069</h3><p>史前音乐与游戏科普 · 改善。spent years 后切分，living with 的单位完整；另一版 living | with 被拆开。</p><div class="pair"><div><b>现行算法</b><pre>446.96-448.48 (1.52s): In the daylight, people worked.
+448.56-450.64 (2.08s): They tracked tracks, gathered tubers,
+450.72-452.32 (1.60s): chipped flint, and tanned hides.
+452.56-455.20 (2.64s): Anthropologist Polly Wiessner spent years living
+455.20-458.40 (3.20s): with the Ju/&#x27;hoansi hunter-gatherers and painstakingly recorded
+458.40-461.84 (3.44s): their daytime conversations versus their nighttime conversations.
+462.24-466.40 (4.16s): Her findings were striking: during the day, 75% of conversations
+466.48-469.28 (2.80s): revolved around practical matters, economic chores,</pre></div><div><b>冻结候选</b><pre>446.96-448.48 (1.52s): In the daylight, people worked.
+448.56-450.64 (2.08s): They tracked tracks, gathered tubers,
+450.72-452.32 (1.60s): chipped flint, and tanned hides.
+452.56-454.88 (2.32s): Anthropologist Polly Wiessner spent years
+454.88-456.88 (2.00s): living with the Ju/&#x27;hoansi hunter-gatherers
+457.04-459.84 (2.80s): and painstakingly recorded their daytime conversations
+460.00-461.84 (1.84s): versus their nighttime conversations.
+462.24-466.40 (4.16s): Her findings were striking: during the day, 75% of conversations
+466.48-469.28 (2.80s): revolved around practical matters, economic chores,</pre></div></div></article><article><h3>当前样本回归：rather than 保持完整 · R084</h3><p>当前心理学解说（回归） · 改善。rather than 不再拆开。</p><div class="pair"><div><b>现行算法</b><pre>237.76-240.40 (2.64s): one in which they described their ideal partner and one
+240.40-242.96 (2.56s): in which their partner actually described themselves.
+243.04-245.92 (2.88s): What did they discover? People&#x27;s impressions of their partners
+245.92-248.32 (2.40s): were more similar to their ideal partner rather
+248.32-250.32 (2.00s): than their partner&#x27;s self-reported description.
+250.48-253.60 (3.12s): So, we tend to see our partners the way we want to see them.
+254.24-255.76 (1.52s): “I love how she makes me feel.
+255.84-258.16 (2.32s): Like... like anything&#x27;s possible.”
+258.32-260.24 (1.92s): C. Poorer Social Perception.</pre></div><div><b>冻结候选</b><pre>237.76-240.40 (2.64s): one in which they described their ideal partner and one
+240.40-242.96 (2.56s): in which their partner actually described themselves.
+243.04-245.92 (2.88s): What did they discover? People&#x27;s impressions of their partners
+245.92-248.00 (2.08s): were more similar to their ideal partner
+248.00-250.32 (2.32s): rather than their partner&#x27;s self-reported description.
+250.48-253.60 (3.12s): So, we tend to see our partners the way we want to see them.
+254.24-255.76 (1.52s): “I love how she makes me feel.
+255.84-258.16 (2.32s): Like... like anything&#x27;s possible.”
+258.32-260.24 (1.92s): C. Poorer Social Perception.</pre></div></div></article><article><h3>明确退步：主语残片与跨句混合 · R063</h3><p>退休金与朋友叙事 · 退步。在完整句结束后另起 Then，去除了句尾的时间状语跨句混合。</p><div class="pair"><div><b>现行算法</b><pre>790.17-793.05 (2.88s): his accountant told him to keep what he reported as low
+793.05-796.81 (3.76s): as he legally could and put everything else back into the business,
+797.05-800.17 (3.12s): and plenty of men who had their own trucks did it that way.
+800.65-803.61 (2.96s): Nobody at thirty-five is thinking about what that does
+803.69-806.33 (2.64s): to a Social Security check at sixty-seven.
+806.89-808.73 (1.84s): Then he sold out in a bad year.
+809.21-811.29 (2.08s): Walt could be a stubborn so-and-so,
+811.53-815.29 (3.76s): and I&#x27;d have said so to his face, but he was never a fool with money.
+815.61-819.53 (3.92s): He did what men in his line of work did, and the bill came later.</pre></div><div><b>冻结候选</b><pre>790.17-793.05 (2.88s): his accountant told him to keep what he reported as low
+793.05-796.81 (3.76s): as he legally could and put everything else back into the business,
+797.05-800.17 (3.12s): and plenty of men who had their own trucks did it that way.
+800.65-801.93 (1.28s): Nobody at thirty-five
+801.93-805.21 (3.28s): is thinking about what that does to a Social Security check
+805.21-808.73 (3.52s): at sixty-seven. Then he sold out in a bad year.
+809.21-811.29 (2.08s): Walt could be a stubborn so-and-so,
+811.53-815.29 (3.76s): and I&#x27;d have said so to his face, but he was never a fool with money.
+815.61-819.53 (3.92s): He did what men in his line of work did, and the bill came later.</pre></div></div></article><article><h3>有取舍：happen to 改善，nothing like 被拆开 · R073</h3><p>家庭储蓄叙事 · 有改善也有退步。一版拆开 happen to，另一版拆开 nothing like，属于错误转移。</p><div class="pair"><div><b>现行算法</b><pre>210.00-212.40 (2.40s): Dad never talked money at the supper table,
+212.48-216.72 (4.24s): not one time that I can remember, and that&#x27;s just how men like him were.
+217.28-219.92 (2.64s): At thirty-two, I figured if I worked hard enough
+219.92-223.12 (3.20s): and kept my head down, nothing like that could ever happen
+223.20-225.28 (2.08s): to me. That&#x27;s what you think at thirty-two.
+226.16-228.40 (2.24s): Every Thursday at seven there&#x27;s a bunch of us
+228.40-230.00 (1.60s): at a diner out on the highway.
+230.32-232.88 (2.56s): We push two tables up against the corner booth.
+233.28-236.24 (2.96s): It&#x27;s mostly retired men, plus a couple of widows</pre></div><div><b>冻结候选</b><pre>210.00-212.40 (2.40s): Dad never talked money at the supper table,
+212.48-216.72 (4.24s): not one time that I can remember, and that&#x27;s just how men like him were.
+217.28-219.92 (2.64s): At thirty-two, I figured if I worked hard enough
+219.92-221.84 (1.92s): and kept my head down, nothing
+221.84-225.28 (3.44s): like that could ever happen to me. That&#x27;s what you think at thirty-two.
+226.16-228.40 (2.24s): Every Thursday at seven there&#x27;s a bunch of us
+228.40-230.00 (1.60s): at a diner out on the highway.
+230.32-232.88 (2.56s): We push two tables up against the corner booth.
+233.28-236.24 (2.96s): It&#x27;s mostly retired men, plus a couple of widows</pre></div></div></article><p>R063 中，候选把 Nobody at thirty-five 单独变成 1.28 秒字幕，再将上一句的 at sixty-seven. 与完整的 Then he sold out in a bad year. 放在同条。该现象没有被“句尾接未完成下句”指标计入，说明必须保留上下文评审。R073 则显示仅降低指定依存关系的切点，可能发生错误转移。</p><h2>6. 开发阶段机制比较</h2><p>以下只包含 3 个开发项目。变化过程完整保留，避免把失败或有取舍的尝试隐藏；最终候选冻结后未根据验证结果调参。</p><div class="table-wrap"><table><thead><tr><th>方案</th><th>条数</th><th>新增关系切点候选</th><th>句尾接未完成下句</th><th>&lt;2 秒字幕</th><th>旧短语内部切点</th></tr></thead><tbody><tr><td>现行切分</td><td>1830</td><td>41</td><td>18</td><td>560</td><td>4</td></tr><tr><td>只补充句法关系</td><td>1836</td><td>0</td><td>22</td><td>573</td><td>5</td></tr><tr><td>补充关系并增加句尾残片罚分</td><td>1837</td><td>2</td><td>17</td><td>576</td><td>7</td></tr><tr><td>所有短语保护优先</td><td>1836</td><td>0</td><td>23</td><td>573</td><td>2</td></tr><tr><td>句界完整优先</td><td>1837</td><td>2</td><td>13</td><td>571</td><td>9</td></tr><tr><td>句界加权平衡</td><td>1836</td><td>0</td><td>23</td><td>573</td><td>2</td></tr><tr><td>句界内建模 + 原加权分数</td><td>1836</td><td>0</td><td>22</td><td>573</td><td>3</td></tr><tr><td>只提升短核心短语优先级</td><td>1836</td><td>0</td><td>21</td><td>572</td><td>4</td></tr><tr><td>最终冻结：短核心 &gt; 句界完整 &gt; 宽短语 &gt; 原分数</td><td>1840</td><td>4</td><td>15</td><td>573</td><td>6</td></tr></tbody></table></div><p>只保护短语能把指定关系切点压到 0，却增加句尾残片；句界最高优先级减少残片，却出现 two-bedroom | condo 等核心短语拆分。最终冻结版保留短核心优先，并在更宽的连接前考虑句界，因此接受少量指定关系切点，不能用单项指标最小作为选择标准。</p><h2>7. 硬约束与耗时</h2><p>正式比较共 12 次，均通过原文连续有序覆盖、字符位置连续、原始 token 时间端点（尾条沿用真实音频结束）、无重叠、无词内切点、最大时长、最大字符数、最短时长和阅读速度检查；SRT/VTT 均核对语音字符与原文相同。两版每条均不超过 5 秒和 60 个非空白字符。通过这些检查不代表听感或语义一定更好。</p><div class="table-wrap"><table><thead><tr><th>同一约 28.9 分钟项目</th><th>预热耗时（秒）</th><th>预热后 3 次耗时（秒）</th><th>中位数（秒）</th></tr></thead><tbody><tr><td>现行算法</td><td>2.715</td><td>2.090, 2.132, 2.109</td><td>2.109</td></tr><tr><td>冻结候选</td><td>2.710</td><td>2.285, 2.321, 2.364</td><td>2.321</td></tr></tbody></table></div><p>切分中位数增加 <b>10.1%</b>（<b>0.212 秒</b>）。单个项目、串行运行、两版各预热一次后重复 3 次，重复输出相同；排除音频对齐、模型调用、导出和评审。不能推断整个任务或所有硬件的耗时变化。环境：Python 3.12.14，macOS arm64，spaCy 3.8.16 / en_core_web_sm 3.8.0。</p><h2>8. 适用范围与后续方向</h2><p>这次证明在已有长叙事和科普样本上，通用语法建模能改善部分切点；没有证明已经适合大多数英语内容。样本缺少未参与设计的多人对话、快语速、复杂数字/缩写/术语和缺标点文本；也没有试听或视频播放验证。下一轮应研究主谓和句首/句尾残片的通用评分，限制核心保护对句界的压制，加入新的独立内容并实际播放核对。不要为 R063 或 R073 的具体措辞新增特例。</p><p>当前服务的英语默认已经是 5 秒、60 字符，切分算法没有被这次实验替换。实验输入、候选冻结文件和仓库算法/参数文件的 SHA256 已再次校验一致。</p><h2>9. 全部 84 段评审证据</h2><p>展开任意段落查看原文上下文和两版完整字幕。下拉框仅筛选展示，不影响统计。</p><div class="toolbar"><label>结果筛选：<select id="filter"><option value="all">全部</option><option value="better">改善</option><option value="equal">基本持平</option><option value="mixed">有取舍</option><option value="worse">退步</option></select></label></div><details data-outcome="equal"><summary class="equal">R001 · 采猎生活科普 · 固定抽样 · 基本持平</summary><p>两版在所选段落完全一致。</p><small>原文位置 0–229；候选在打乱标识中为 B。</small><pre>This morning, a machine screamed at you until you woke up. You silenced it, and from that second, your day was already decided. Where you had to be, what you had to finish, how many hours belong to someone else. And tonight, befo</pre><div class="pair"><div><b>现行</b><pre>0.00-2.80 (2.80s): This morning, a machine screamed at you until you woke up.
+2.96-6.56 (3.60s): You silenced it, and from that second, your day was already decided.
+6.64-8.80 (2.16s): Where you had to be, what you had to finish,
+8.96-10.88 (1.92s): how many hours belong to someone else.
+11.04-12.40 (1.36s): And tonight, before you sleep,
+12.64-15.04 (2.40s): you&#x27;ll set that same machine to scream at you again.</pre></div><div><b>候选</b><pre>0.00-2.80 (2.80s): This morning, a machine screamed at you until you woke up.
+2.96-6.56 (3.60s): You silenced it, and from that second, your day was already decided.
+6.64-8.80 (2.16s): Where you had to be, what you had to finish,
+8.96-10.88 (1.92s): how many hours belong to someone else.
+11.04-12.40 (1.36s): And tonight, before you sleep,
+12.64-15.04 (2.40s): you&#x27;ll set that same machine to scream at you again.</pre></div></div></details><details data-outcome="better"><summary class="better">R002 · 采猎生活科普 · 固定抽样 · 改善</summary><p>保留 who came after 的从句单位。</p><small>原文位置 3092–3362；候选在打乱标识中为 B。</small><pre>the diaries say the people with nothing but spears were living lives than the people who came after them with farms, storage, and villages.
+But bones can only tell you so much. They can prove the work was lighter. They can&#x27;t show you how a normal day actually went. So, </pre><div class="pair"><div><b>现行</b><pre>161.60-165.04 (3.44s): how your body was used, and it holds that record for thousands of years.
+165.28-167.20 (1.92s): And the diaries say the people with nothing
+167.20-169.84 (2.64s): but spears were living lives than the people who came
+169.84-172.64 (2.80s): after them with farms, storage, and villages.
+172.72-175.04 (2.32s): But bones can only tell you so much.
+175.20-176.88 (1.68s): They can prove the work was lighter.
+176.96-179.52 (2.56s): They can&#x27;t show you how a normal day actually went.
+180.00-181.92 (1.92s): So, let me walk you through one.
+182.08-185.52 (3.44s): You wake up at dawn on your own because your body got the sleep it needed.</pre></div><div><b>候选</b><pre>161.60-165.04 (3.44s): how your body was used, and it holds that record for thousands of years.
+165.28-167.20 (1.92s): And the diaries say the people with nothing
+167.20-169.44 (2.24s): but spears were living lives than the people
+169.44-172.64 (3.20s): who came after them with farms, storage, and villages.
+172.72-175.04 (2.32s): But bones can only tell you so much.
+175.20-176.88 (1.68s): They can prove the work was lighter.
+176.96-179.52 (2.56s): They can&#x27;t show you how a normal day actually went.
+180.00-181.92 (1.92s): So, let me walk you through one.
+182.08-185.52 (3.44s): You wake up at dawn on your own because your body got the sleep it needed.</pre></div></div></details><details data-outcome="mixed"><summary class="mixed">R003 · 采猎生活科普 · 固定抽样 · 有改善也有退步</summary><p>保留 burning in 和 sitting around，但新增 water is | good 的谓语拆分。</p><small>原文位置 3464–3734；候选在打乱标识中为 B。</small><pre>.
+The fire from last night is still burning in the middle of camp, and people are already sitting around it eating leftover meat and nuts, talking about where the water is good and where the animal tracks were spotted.
+That&#x27;s the whole morning plan, and when it&#x27;s decide</pre><div class="pair"><div><b>现行</b><pre>180.00-181.92 (1.92s): So, let me walk you through one.
+182.08-185.52 (3.44s): You wake up at dawn on your own because your body got the sleep it needed.
+185.76-187.60 (1.84s): The fire from last night is still burning
+187.60-189.76 (2.16s): in the middle of camp, and people are already sitting
+189.76-192.72 (2.96s): around it eating leftover meat and nuts, talking about
+192.72-195.76 (3.04s): where the water is good and where the animal tracks were spotted.
+195.84-197.28 (1.44s): That&#x27;s the whole morning plan,
+197.52-200.08 (2.56s): and when it&#x27;s decided, it&#x27;s decided by everyone.
+200.56-202.40 (1.84s): And today, nobody needs to hunt.</pre></div><div><b>候选</b><pre>180.00-181.92 (1.92s): So, let me walk you through one.
+182.08-185.52 (3.44s): You wake up at dawn on your own because your body got the sleep it needed.
+185.76-188.48 (2.72s): The fire from last night is still burning in the middle of camp,
+188.64-191.36 (2.72s): and people are already sitting around it eating leftover meat
+191.44-193.52 (2.08s): and nuts, talking about where the water is
+193.52-195.76 (2.24s): good and where the animal tracks were spotted.
+195.84-197.28 (1.44s): That&#x27;s the whole morning plan,
+197.52-200.08 (2.56s): and when it&#x27;s decided, it&#x27;s decided by everyone.
+200.56-202.40 (1.84s): And today, nobody needs to hunt.</pre></div></div></details><details data-outcome="equal"><summary class="equal">R004 · 采猎生活科普 · 固定抽样 · 基本持平</summary><p>名词修饰与目的短语均可拆分；收益不够明确，且 B 留下 1.28 秒尾段。</p><small>原文位置 6812–7082；候选在打乱标识中为 B。</small><pre>the shade and talk. They play with the kids and they groom each other, picking through hair while the conversation drifts.
+Next to you, someone is drilling tiny holes through seashells to string into a necklace.
+Someone else is carving a design into a piece of bone and </pre><div class="pair"><div><b>现行</b><pre>361.92-364.00 (2.08s): It&#x27;s afternoon and the camp has slowed down.
+364.16-365.76 (1.60s): People sit in the shade and talk.
+365.84-367.84 (2.00s): They play with the kids and they groom each other,
+367.92-370.16 (2.24s): picking through hair while the conversation drifts.
+370.32-372.80 (2.48s): Next to you, someone is drilling tiny holes
+372.80-374.88 (2.08s): through seashells to string into a necklace.
+374.96-377.52 (2.56s): Someone else is carving a design into a piece of bone
+377.68-380.80 (3.12s): and that design has no purpose at all except to look good.
+381.04-383.28 (2.24s): And this isn&#x27;t a guess about how they filled their time.</pre></div><div><b>候选</b><pre>361.92-364.00 (2.08s): It&#x27;s afternoon and the camp has slowed down.
+364.16-365.76 (1.60s): People sit in the shade and talk.
+365.84-367.84 (2.00s): They play with the kids and they groom each other,
+367.92-370.16 (2.24s): picking through hair while the conversation drifts.
+370.32-373.60 (3.28s): Next to you, someone is drilling tiny holes through seashells
+373.60-374.88 (1.28s): to string into a necklace.
+374.96-377.52 (2.56s): Someone else is carving a design into a piece of bone
+377.68-380.80 (3.12s): and that design has no purpose at all except to look good.
+381.04-383.28 (2.24s): And this isn&#x27;t a guess about how they filled their time.</pre></div></div></details><details data-outcome="better"><summary class="better">R005 · 采猎生活科普 · 固定抽样 · 改善</summary><p>条件与主句分开，nobody owes you 保持完整。</p><small>原文位置 8320–8590；候选在打乱标识中为 B。</small><pre>nobody owes you anything, and you starve.
+So, all those lazy afternoon hours of talking and joking and grooming were actually an investment in the only insurance this world has.
+The anthropologist James Suzman found that Ju/&#x27;hoansi adults spend around 6 hours every sing</pre><div class="pair"><div><b>现行</b><pre>441.04-443.92 (2.88s): If people like you, they feed you when you have nothing.
+444.00-446.16 (2.16s): But if they don&#x27;t like you, then nobody owes
+446.16-447.76 (1.60s): you anything, and you starve.
+447.92-452.08 (4.16s): So, all those lazy afternoon hours of talking and joking and grooming
+452.24-455.60 (3.36s): were actually an investment in the only insurance this world has.
+455.76-459.28 (3.52s): The anthropologist James Suzman found that Ju/&#x27;hoansi adults
+459.28-462.96 (3.68s): spend around 6 hours every single day on pure social time.
+463.44-465.60 (2.16s): Because in this world, your relationships are</pre></div><div><b>候选</b><pre>444.00-445.52 (1.52s): But if they don&#x27;t like you, then
+445.52-447.76 (2.24s): nobody owes you anything, and you starve.
+447.92-452.08 (4.16s): So, all those lazy afternoon hours of talking and joking and grooming
+452.24-455.60 (3.36s): were actually an investment in the only insurance this world has.
+455.76-459.28 (3.52s): The anthropologist James Suzman found that Ju/&#x27;hoansi adults
+459.28-462.96 (3.68s): spend around 6 hours every single day on pure social time.
+463.44-465.60 (2.16s): Because in this world, your relationships are</pre></div></div></details><details data-outcome="better"><summary class="better">R006 · 采猎生活科普 · 固定抽样 · 改善</summary><p>more than 保持完整；另一版把 more 留在末尾。</p><small>原文位置 9658–9928；候选在打乱标识中为 A。</small><pre>and the future, none of that comes out of a scared, hungry mind. Those stories only show up when your stomach is full and your body is safe. So, the fire was doing more than cooking food and keeping predators away. It created the first hours in human history where the m</pre><div class="pair"><div><b>现行</b><pre>515.36-517.36 (2.00s): And notice what kind of stories these are.
+517.52-520.08 (2.56s): Gods and spirits, the past and the future,
+520.08-522.40 (2.32s): none of that comes out of a scared, hungry mind.
+522.80-524.16 (1.36s): Those stories only show up
+524.16-526.40 (2.24s): when your stomach is full and your body is safe.
+526.56-528.16 (1.60s): So, the fire was doing more
+528.16-530.32 (2.16s): than cooking food and keeping predators away.
+530.40-532.40 (2.00s): It created the first hours in human history
+532.40-534.00 (1.60s): where the mind was completely free.
+534.16-537.36 (3.20s): And Weisner argued that this is exactly where culture was born,</pre></div><div><b>候选</b><pre>515.36-517.36 (2.00s): And notice what kind of stories these are.
+517.52-520.08 (2.56s): Gods and spirits, the past and the future,
+520.08-522.40 (2.32s): none of that comes out of a scared, hungry mind.
+522.80-524.16 (1.36s): Those stories only show up
+524.16-526.40 (2.24s): when your stomach is full and your body is safe.
+526.56-528.96 (2.40s): So, the fire was doing more than cooking food
+528.96-530.32 (1.36s): and keeping predators away.
+530.40-532.40 (2.00s): It created the first hours in human history
+532.40-534.00 (1.60s): where the mind was completely free.
+534.16-537.36 (3.20s): And Weisner argued that this is exactly where culture was born,</pre></div></div></details><details data-outcome="equal"><summary class="equal">R007 · 采猎生活科普 · 固定抽样 · 基本持平</summary><p>两版在所选段落完全一致。</p><small>原文位置 11324–11594；候选在打乱标识中为 A。</small><pre> is a trap, and here&#x27;s exactly how it snapped shut. Farming produces more food. More food means more babies survive, so the population grows. A bigger population needs more food, so you plant more fields. More fields means more work.
+And then the lock clicks. Once your </pre><div class="pair"><div><b>现行</b><pre>603.84-606.56 (2.72s): and you never have to follow an antelope for 6 hours again.
+606.80-610.08 (3.28s): But farming is a trap, and here&#x27;s exactly how it snapped shut.
+610.16-611.68 (1.52s): Farming produces more food.
+611.84-615.44 (3.60s): More food means more babies survive, so the population grows.
+615.92-619.28 (3.36s): A bigger population needs more food, so you plant more fields.
+619.44-621.12 (1.68s): More fields means more work.
+621.28-622.56 (1.28s): And then the lock clicks.
+622.72-625.36 (2.64s): Once your group is too big to feed by hunting and gathering,
+625.60-627.44 (1.84s): the old life can&#x27;t carry you anymore.</pre></div><div><b>候选</b><pre>603.84-606.56 (2.72s): and you never have to follow an antelope for 6 hours again.
+606.80-610.08 (3.28s): But farming is a trap, and here&#x27;s exactly how it snapped shut.
+610.16-611.68 (1.52s): Farming produces more food.
+611.84-615.44 (3.60s): More food means more babies survive, so the population grows.
+615.92-619.28 (3.36s): A bigger population needs more food, so you plant more fields.
+619.44-621.12 (1.68s): More fields means more work.
+621.28-622.56 (1.28s): And then the lock clicks.
+622.72-625.36 (2.64s): Once your group is too big to feed by hunting and gathering,
+625.60-627.44 (1.84s): the old life can&#x27;t carry you anymore.</pre></div></div></details><details data-outcome="equal"><summary class="equal">R008 · 采猎生活科普 · 固定抽样 · 基本持平</summary><p>两版在所选段落完全一致。</p><small>原文位置 12386–12656；候选在打乱标识中为 B。</small><pre>ests, and tax collectors. And eventually they brought a brand new idea in human history. For the first time ever, your hours could belong to someone else, sold off in exchange for food you no longer knew how to find on your own. So nobody stole your time in one dramatic</pre><div class="pair"><div><b>现行</b><pre>662.08-665.12 (3.04s): Specialists needed trade, and trade built cities.
+665.52-668.96 (3.44s): Then cities brought soldiers, priests, and tax collectors.
+669.12-672.24 (3.12s): And eventually they brought a brand new idea in human history.
+672.40-675.44 (3.04s): For the first time ever, your hours could belong to someone else,
+675.52-678.88 (3.36s): sold off in exchange for food you no longer knew how to find on your own.
+679.36-682.00 (2.64s): So nobody stole your time in one dramatic night.
+682.24-685.20 (2.96s): It was traded away slowly, one generation at a time,</pre></div><div><b>候选</b><pre>662.08-665.12 (3.04s): Specialists needed trade, and trade built cities.
+665.52-668.96 (3.44s): Then cities brought soldiers, priests, and tax collectors.
+669.12-672.24 (3.12s): And eventually they brought a brand new idea in human history.
+672.40-675.44 (3.04s): For the first time ever, your hours could belong to someone else,
+675.52-678.88 (3.36s): sold off in exchange for food you no longer knew how to find on your own.
+679.36-682.00 (2.64s): So nobody stole your time in one dramatic night.
+682.24-685.20 (2.96s): It was traded away slowly, one generation at a time,</pre></div></div></details><details data-outcome="equal"><summary class="equal">R009 · 养老院家庭叙事 · 固定抽样 · 基本持平</summary><p>两版在所选段落完全一致。</p><small>原文位置 1232–1502；候选在打乱标识中为 A。</small><pre>r with a screwdriver in my teeth. I climbed poles for the electric co-op for thirty-one years, and I&#x27;ll tell you what my old foreman would&#x27;ve said. A man my age on a stepladder isn&#x27;t a safety hazard. He&#x27;s a coming attraction.
+The ladder went one way and I went the other</pre><div class="pair"><div><b>现行</b><pre>70.08-73.60 (3.52s): So there I am, seventy-four years old, on the third step
+73.60-77.04 (3.44s): of an aluminum stepladder with a screwdriver in my teeth.
+77.44-80.96 (3.52s): I climbed poles for the electric co-op for thirty-one years,
+81.36-83.68 (2.32s): and I&#x27;ll tell you what my old foreman would&#x27;ve said.
+84.16-87.52 (3.36s): A man my age on a stepladder isn&#x27;t a safety hazard.
+87.92-89.36 (1.44s): He&#x27;s a coming attraction.
+89.76-92.48 (2.72s): The ladder went one way and I went the other,
+92.56-95.28 (2.72s): and I landed sideways on the concrete step.</pre></div><div><b>候选</b><pre>70.08-73.60 (3.52s): So there I am, seventy-four years old, on the third step
+73.60-77.04 (3.44s): of an aluminum stepladder with a screwdriver in my teeth.
+77.44-80.96 (3.52s): I climbed poles for the electric co-op for thirty-one years,
+81.36-83.68 (2.32s): and I&#x27;ll tell you what my old foreman would&#x27;ve said.
+84.16-87.52 (3.36s): A man my age on a stepladder isn&#x27;t a safety hazard.
+87.92-89.36 (1.44s): He&#x27;s a coming attraction.
+89.76-92.48 (2.72s): The ladder went one way and I went the other,
+92.56-95.28 (2.72s): and I landed sideways on the concrete step.</pre></div></div></details><details data-outcome="equal"><summary class="equal">R010 · 养老院家庭叙事 · 固定抽样 · 基本持平</summary><p>两版在所选段落完全一致。</p><small>原文位置 4132–4402；候选在打乱标识中为 A。</small><pre>arp as a tack, dry as a cracker.
+
+He gave me the rules the first night, like a man handing over the keys to a truck. &quot;Thursday is fried chicken. Don&#x27;t miss it, and don&#x27;t let them give you the baked. Never push the call light between two and four in the afternoon, that&#x27;s</pre><div class="pair"><div><b>现行</b><pre>253.36-254.32 (0.96s): That was Walt.
+254.56-256.88 (2.32s): Sharp as a tack, dry as a cracker.
+257.36-259.12 (1.76s): He gave me the rules the first night,
+259.28-261.68 (2.40s): like a man handing over the keys to a truck.
+262.08-263.68 (1.60s): &quot;Thursday is fried chicken.
+263.84-266.32 (2.48s): Don&#x27;t miss it, and don&#x27;t let them give you the baked.
+266.88-270.96 (4.08s): Never push the call light between two and four in the afternoon, that&#x27;s
+270.96-273.68 (2.72s): when they&#x27;re changing everybody and you&#x27;ll wait till you&#x27;re gray.</pre></div><div><b>候选</b><pre>253.36-254.32 (0.96s): That was Walt.
+254.56-256.88 (2.32s): Sharp as a tack, dry as a cracker.
+257.36-259.12 (1.76s): He gave me the rules the first night,
+259.28-261.68 (2.40s): like a man handing over the keys to a truck.
+262.08-263.68 (1.60s): &quot;Thursday is fried chicken.
+263.84-266.32 (2.48s): Don&#x27;t miss it, and don&#x27;t let them give you the baked.
+266.88-270.96 (4.08s): Never push the call light between two and four in the afternoon, that&#x27;s
+270.96-273.68 (2.72s): when they&#x27;re changing everybody and you&#x27;ll wait till you&#x27;re gray.</pre></div></div></details><details data-outcome="equal"><summary class="equal">R011 · 养老院家庭叙事 · 固定抽样 · 基本持平</summary><p>两版在所选段落完全一致。</p><small>原文位置 7045–7315；候选在打乱标识中为 A。</small><pre>the chicken.
+
+When they wheeled me back to the room, Walt was doing the crossword. He didn&#x27;t look up. He said, &quot;How&#x27;d it go?&quot;
+
+I said, &quot;I&#x27;m staying a while.&quot;
+
+He said, &quot;A while.&quot; And he went back to his crossword. I said, &quot;So?&quot; He said, &quot;So nothing.&quot; And that was all he</pre><div class="pair"><div><b>现行</b><pre>428.40-431.36 (2.96s): My daughter&#x27;s ninety minutes away sitting in her car,
+431.68-433.36 (1.68s): and I&#x27;m telling her about the chicken.
+434.00-437.52 (3.52s): When they wheeled me back to the room, Walt was doing the crossword.
+437.76-438.72 (0.96s): He didn&#x27;t look up.
+438.96-440.40 (1.44s): He said, &quot;How&#x27;d it go?&quot;
+440.72-442.48 (1.76s): I said, &quot;I&#x27;m staying a while.&quot;
+442.72-444.00 (1.28s): He said, &quot;A while.&quot;
+444.24-445.84 (1.60s): And he went back to his crossword.
+446.32-447.44 (1.12s): I said, &quot;So?&quot;
+447.60-449.12 (1.52s): He said, &quot;So nothing.&quot;
+449.36-451.76 (2.40s): And that was all he said about it for another month.
+452.08-453.20 (1.12s): I&#x27;ll be honest with you.</pre></div><div><b>候选</b><pre>428.40-431.36 (2.96s): My daughter&#x27;s ninety minutes away sitting in her car,
+431.68-433.36 (1.68s): and I&#x27;m telling her about the chicken.
+434.00-437.52 (3.52s): When they wheeled me back to the room, Walt was doing the crossword.
+437.76-438.72 (0.96s): He didn&#x27;t look up.
+438.96-440.40 (1.44s): He said, &quot;How&#x27;d it go?&quot;
+440.72-442.48 (1.76s): I said, &quot;I&#x27;m staying a while.&quot;
+442.72-444.00 (1.28s): He said, &quot;A while.&quot;
+444.24-445.84 (1.60s): And he went back to his crossword.
+446.32-447.44 (1.12s): I said, &quot;So?&quot;
+447.60-449.12 (1.52s): He said, &quot;So nothing.&quot;
+449.36-451.76 (2.40s): And that was all he said about it for another month.
+452.08-453.20 (1.12s): I&#x27;ll be honest with you.</pre></div></div></details><details data-outcome="equal"><summary class="equal">R012 · 养老院家庭叙事 · 固定抽样 · 基本持平</summary><p>两版在所选段落完全一致。</p><small>原文位置 11759–12029；候选在打乱标识中为 B。</small><pre>back step taking the trash out. They told me three weeks of rehab and I&#x27;d go home.&quot; He held up three fingers. &quot;Three weeks.&quot;
+
+I didn&#x27;t say anything.
+&quot;The three weeks ran out, same as yours did. Kevin flew in for the meeting. Same room you were in, same lady, probably. A</pre><div class="pair"><div><b>现行</b><pre>722.00-723.52 (1.52s): Four years ago this month.
+723.76-726.24 (2.48s): Slipped on the back step taking the trash out.
+726.76-729.40 (2.64s): They told me three weeks of rehab and I&#x27;d go home.&quot;
+729.80-731.40 (1.60s): He held up three fingers.
+731.56-732.52 (0.96s): &quot;Three weeks.&quot;
+732.76-733.88 (1.12s): I didn&#x27;t say anything.
+734.28-736.92 (2.64s): &quot;The three weeks ran out, same as yours did.
+737.32-738.92 (1.60s): Kevin flew in for the meeting.
+739.32-742.28 (2.96s): Same room you were in, same lady, probably.
+742.76-744.76 (2.00s): And she asked what we wanted to do,
+744.84-747.96 (3.12s): and Kevin said, &#x27;Let&#x27;s see how the next month goes.&#x27;</pre></div><div><b>候选</b><pre>722.00-723.52 (1.52s): Four years ago this month.
+723.76-726.24 (2.48s): Slipped on the back step taking the trash out.
+726.76-729.40 (2.64s): They told me three weeks of rehab and I&#x27;d go home.&quot;
+729.80-731.40 (1.60s): He held up three fingers.
+731.56-732.52 (0.96s): &quot;Three weeks.&quot;
+732.76-733.88 (1.12s): I didn&#x27;t say anything.
+734.28-736.92 (2.64s): &quot;The three weeks ran out, same as yours did.
+737.32-738.92 (1.60s): Kevin flew in for the meeting.
+739.32-742.28 (2.96s): Same room you were in, same lady, probably.
+742.76-744.76 (2.00s): And she asked what we wanted to do,
+744.84-747.96 (3.12s): and Kevin said, &#x27;Let&#x27;s see how the next month goes.&#x27;</pre></div></div></details><details data-outcome="mixed"><summary class="mixed">R013 · 养老院家庭叙事 · 固定抽样 · 有改善也有退步</summary><p>请求的 if 从句更完整，但 engine | running 比 engine running | for 更悬空。</p><small>原文位置 15816–16086；候选在打乱标识中为 A。</small><pre>the window I watched her walk out to her car and get in, and she sat there with the engine running for a good ten minutes before she pulled out. I told myself she was answering a text.
+
+Monday, I asked the therapy girl if I could do my hall walk in my boots instead of t</pre><div class="pair"><div><b>现行</b><pre>968.90-971.70 (2.80s): neither one of us cared about, and she left at four.
+972.02-974.58 (2.56s): From the window I watched her walk out to her car
+974.58-977.62 (3.04s): and get in, and she sat there with the engine running
+977.62-979.94 (2.32s): for a good ten minutes before she pulled out.
+980.50-982.90 (2.40s): I told myself she was answering a text.
+983.14-986.50 (3.36s): Monday, I asked the therapy girl if I could do my hall walk
+986.50-988.82 (2.32s): in my boots instead of the yellow socks.
+989.30-992.10 (2.80s): My boots were still in the plastic bag on the shelf.</pre></div><div><b>候选</b><pre>968.90-971.70 (2.80s): neither one of us cared about, and she left at four.
+972.02-974.58 (2.56s): From the window I watched her walk out to her car
+974.58-977.22 (2.64s): and get in, and she sat there with the engine
+977.22-979.94 (2.72s): running for a good ten minutes before she pulled out.
+980.50-982.90 (2.40s): I told myself she was answering a text.
+983.14-985.14 (2.00s): Monday, I asked the therapy girl
+985.14-988.82 (3.68s): if I could do my hall walk in my boots instead of the yellow socks.
+989.30-992.10 (2.80s): My boots were still in the plastic bag on the shelf.</pre></div></div></details><details data-outcome="better"><summary class="better">R014 · 养老院家庭叙事 · 固定抽样 · 改善</summary><p>put her dad in a home 完整，后续 and 引出第二动作。</p><small>原文位置 19914–20184；候选在打乱标识中为 A。</small><pre>her dad in a home and sold his house out from under him. I couldn&#x27;t be that. So I just kept saying okay.&quot;
+
+I said, &quot;You didn&#x27;t put me anywhere, Carla. I walked in on a walker with the game on the radio.&quot;
+
+She laughed, kind of wet. Then she said, &quot;You said it before I ha</pre><div class="pair"><div><b>现行</b><pre>1224.82-1228.58 (3.76s): today I&#x27;ll bring it up, and then I&#x27;d look at you in that bed and I couldn&#x27;t.
+1229.06-1231.54 (2.48s): I kept thinking, I&#x27;m the daughter who put her dad
+1231.54-1234.10 (2.56s): in a home and sold his house out from under him.
+1234.34-1235.38 (1.04s): I couldn&#x27;t be that.
+1235.70-1237.38 (1.68s): So I just kept saying okay.&quot;
+1237.70-1239.30 (1.60s): I said, &quot;You didn&#x27;t put me
+1240.18-1242.26 (2.08s): anywhere, Carla.
+1242.58-1245.14 (2.56s): I walked in on a walker with the game on the radio.&quot;
+1245.38-1247.70 (2.32s): She laughed, kind of wet.
+1248.26-1250.74 (2.48s): Then she said, &quot;You said it before I had to.&quot;
+1250.98-1252.42 (1.44s): &quot;I know I did.&quot; &quot;Why?&quot;</pre></div><div><b>候选</b><pre>1224.82-1228.58 (3.76s): today I&#x27;ll bring it up, and then I&#x27;d look at you in that bed and I couldn&#x27;t.
+1229.06-1232.18 (3.12s): I kept thinking, I&#x27;m the daughter who put her dad in a home
+1232.18-1234.10 (1.92s): and sold his house out from under him.
+1234.34-1235.38 (1.04s): I couldn&#x27;t be that.
+1235.70-1237.38 (1.68s): So I just kept saying okay.&quot;
+1237.70-1239.30 (1.60s): I said, &quot;You didn&#x27;t put me
+1240.18-1242.26 (2.08s): anywhere, Carla.
+1242.58-1245.14 (2.56s): I walked in on a walker with the game on the radio.&quot;
+1245.38-1247.70 (2.32s): She laughed, kind of wet.
+1248.26-1250.74 (2.48s): Then she said, &quot;You said it before I had to.&quot;
+1250.98-1252.42 (1.44s): &quot;I know I did.&quot; &quot;Why?&quot;</pre></div></div></details><details data-outcome="equal"><summary class="equal">R015 · 养老院家庭叙事 · 固定抽样 · 基本持平</summary><p>两版在所选段落完全一致。</p><small>原文位置 21297–21567；候选在打乱标识中为 A。</small><pre>igned those papers at Carla&#x27;s kitchen table with a cup of coffee going. Not a tray table. A kitchen table. That mattered more than it should have.
+
+The night before I left, Walt got his shoes down. It wasn&#x27;t Sunday. He polished them anyway, slow, and neither one of us s</pre><div class="pair"><div><b>现行</b><pre>1314.74-1317.14 (2.40s): The house sold in the spring to a young family.
+1317.54-1320.02 (2.48s): I signed those papers at Carla&#x27;s kitchen table
+1320.02-1321.46 (1.44s): with a cup of coffee going.
+1321.78-1322.98 (1.20s): Not a tray table.
+1323.14-1324.10 (0.96s): A kitchen table.
+1324.74-1326.50 (1.76s): That mattered more than it should have.
+1327.38-1330.10 (2.72s): The night before I left, Walt got his shoes down.
+1330.34-1331.46 (1.12s): It wasn&#x27;t Sunday.
+1331.70-1333.78 (2.08s): He polished them anyway, slow,
+1334.10-1336.18 (2.08s): and neither one of us said anything about that.
+1336.66-1338.90 (2.24s): I laid there and I thought about the question.</pre></div><div><b>候选</b><pre>1314.74-1317.14 (2.40s): The house sold in the spring to a young family.
+1317.54-1320.02 (2.48s): I signed those papers at Carla&#x27;s kitchen table
+1320.02-1321.46 (1.44s): with a cup of coffee going.
+1321.78-1322.98 (1.20s): Not a tray table.
+1323.14-1324.10 (0.96s): A kitchen table.
+1324.74-1326.50 (1.76s): That mattered more than it should have.
+1327.38-1330.10 (2.72s): The night before I left, Walt got his shoes down.
+1330.34-1331.46 (1.12s): It wasn&#x27;t Sunday.
+1331.70-1333.78 (2.08s): He polished them anyway, slow,
+1334.10-1336.18 (2.08s): and neither one of us said anything about that.
+1336.66-1338.90 (2.24s): I laid there and I thought about the question.</pre></div></div></details><details data-outcome="equal"><summary class="equal">R016 · 养老院家庭叙事 · 固定抽样 · 基本持平</summary><p>两版在所选段落完全一致。</p><small>原文位置 27614–27884；候选在打乱标识中为 B。</small><pre>rest of your life if you let it. A date is how you argue with it.
+
+I&#x27;d like to know something from you, if you&#x27;d put it in the comments. How long was &quot;for now&quot; in your family? Just the number is fine. Weeks, months, years. I&#x27;ll read every one of them, and I&#x27;ll probably </pre><div class="pair"><div><b>现行</b><pre>1697.30-1698.82 (1.52s): you know what to say back now.
+1699.30-1702.02 (2.72s): &quot;For now&quot; will keep you the rest of your life if you let it.
+1702.50-1704.10 (1.60s): A date is how you argue with it.
+1704.34-1707.94 (3.60s): I&#x27;d like to know something from you, if you&#x27;d put it in the comments.
+1708.26-1710.10 (1.84s): How long was &quot;for now&quot; in your family?
+1710.58-1711.94 (1.36s): Just the number is fine.
+1712.18-1713.94 (1.76s): Weeks, months, years.
+1714.18-1717.06 (2.88s): I&#x27;ll read every one of them, and I&#x27;ll probably read some
+1717.06-1718.66 (1.60s): of them to Walt on Thursday.</pre></div><div><b>候选</b><pre>1697.30-1698.82 (1.52s): you know what to say back now.
+1699.30-1702.02 (2.72s): &quot;For now&quot; will keep you the rest of your life if you let it.
+1702.50-1704.10 (1.60s): A date is how you argue with it.
+1704.34-1707.94 (3.60s): I&#x27;d like to know something from you, if you&#x27;d put it in the comments.
+1708.26-1710.10 (1.84s): How long was &quot;for now&quot; in your family?
+1710.58-1711.94 (1.36s): Just the number is fine.
+1712.18-1713.94 (1.76s): Weeks, months, years.
+1714.18-1717.06 (2.88s): I&#x27;ll read every one of them, and I&#x27;ll probably read some
+1717.06-1718.66 (1.60s): of them to Walt on Thursday.</pre></div></div></details><details data-outcome="equal"><summary class="equal">R017 · 退休金与朋友叙事 · 固定抽样 · 基本持平</summary><p>两版在所选段落完全一致。</p><small>原文位置 3287–3557；候选在打乱标识中为 A。</small><pre>down five-gallon buckets next to a little space heater that ticked when it warmed up.
+
+He never let up on me about the gas company.
+&quot;You&#x27;ll never get rich working for the gas company, Ray.&quot; And I&#x27;d say, &quot;No, but I&#x27;ll never get laid off, either.&quot; And he&#x27;d say, &quot;Some mont</pre><div class="pair"><div><b>现行</b><pre>197.45-200.17 (2.72s): Saturday mornings we had coffee in his garage,
+200.41-203.61 (3.20s): sitting on two upside-down five-gallon buckets next
+203.69-206.33 (2.64s): to a little space heater that ticked when it warmed up.
+206.81-209.29 (2.48s): He never let up on me about the gas company.
+209.69-212.49 (2.80s): &quot;You&#x27;ll never get rich working for the gas company, Ray.&quot;
+213.05-216.25 (3.20s): And I&#x27;d say, &quot;No, but I&#x27;ll never get laid off, either.&quot;
+216.41-220.01 (3.60s): And he&#x27;d say, &quot;Some months it rains, and some months it pours.&quot;
+220.25-223.85 (3.60s): That was a plumber&#x27;s joke, and it was also, I found out later,</pre></div><div><b>候选</b><pre>197.45-200.17 (2.72s): Saturday mornings we had coffee in his garage,
+200.41-203.61 (3.20s): sitting on two upside-down five-gallon buckets next
+203.69-206.33 (2.64s): to a little space heater that ticked when it warmed up.
+206.81-209.29 (2.48s): He never let up on me about the gas company.
+209.69-212.49 (2.80s): &quot;You&#x27;ll never get rich working for the gas company, Ray.&quot;
+213.05-216.25 (3.20s): And I&#x27;d say, &quot;No, but I&#x27;ll never get laid off, either.&quot;
+216.41-220.01 (3.60s): And he&#x27;d say, &quot;Some months it rains, and some months it pours.&quot;
+220.25-223.85 (3.60s): That was a plumber&#x27;s joke, and it was also, I found out later,</pre></div></div></details><details data-outcome="better"><summary class="better">R018 · 退休金与朋友叙事 · 固定抽样 · 改善</summary><p>完整地点从句后在逗号分开；two-bedroom condo 也保持完整。</p><small>原文位置 4128–4398；候选在打乱标识中为 A。</small><pre>and we&#x27;d driven her home from the hospital that same morning.
+Linda and Joanne had been down at the library on the computer, and they came back with a printed listing for a two-bedroom condo on the Gulf Coast of Florida, near Fort Myers, for the whole month of February.</pre><div class="pair"><div><b>现行</b><pre>249.21-253.45 (4.24s): No, the second week, because Linda&#x27;s sister had just had her knee done
+253.61-256.65 (3.04s): and we&#x27;d driven her home from the hospital that same morning.
+256.97-258.65 (1.68s): Linda and Joanne had been down
+258.65-261.53 (2.88s): at the library on the computer, and they came back with
+261.53-265.85 (4.32s): a printed listing for a two-bedroom condo on the Gulf Coast of Florida,
+266.09-268.97 (2.88s): near Fort Myers, for the whole month of February.
+269.53-271.85 (2.32s): It was seventy-eight hundred dollars for the month,</pre></div><div><b>候选</b><pre>249.21-253.45 (4.24s): No, the second week, because Linda&#x27;s sister had just had her knee done
+253.61-256.65 (3.04s): and we&#x27;d driven her home from the hospital that same morning.
+256.97-260.33 (3.36s): Linda and Joanne had been down at the library on the computer,
+260.57-262.57 (2.00s): and they came back with a printed listing
+262.57-265.85 (3.28s): for a two-bedroom condo on the Gulf Coast of Florida,
+266.09-268.97 (2.88s): near Fort Myers, for the whole month of February.
+269.53-271.85 (2.32s): It was seventy-eight hundred dollars for the month,</pre></div></div></details><details data-outcome="equal"><summary class="equal">R019 · 退休金与朋友叙事 · 固定抽样 · 基本持平</summary><p>两版在所选段落完全一致。</p><small>原文位置 7705–7975；候选在打乱标识中为 B。</small><pre>ut in your furnace that something&#x27;s none of his business, so here&#x27;s what I&#x27;d say instead.
+When money comes up because you&#x27;re splitting something, talk about the price of the thing, never the size of your check. You say, &quot;Let me look at it at home, and I&#x27;ll call you Sund</pre><div class="pair"><div><b>现行</b><pre>464.49-466.65 (2.16s): not the nice couple you met on the cruise.
+467.05-469.53 (2.48s): I know it&#x27;s hard to tell a man who put in your furnace
+469.53-473.21 (3.68s): that something&#x27;s none of his business, so here&#x27;s what I&#x27;d say instead.
+473.53-476.25 (2.72s): When money comes up because you&#x27;re splitting something,
+476.49-480.09 (3.60s): talk about the price of the thing, never the size of your check.
+480.33-483.69 (3.36s): You say, &quot;Let me look at it at home, and I&#x27;ll call you Sunday.&quot;
+484.01-485.21 (1.20s): That&#x27;s the whole speech.</pre></div><div><b>候选</b><pre>464.49-466.65 (2.16s): not the nice couple you met on the cruise.
+467.05-469.53 (2.48s): I know it&#x27;s hard to tell a man who put in your furnace
+469.53-473.21 (3.68s): that something&#x27;s none of his business, so here&#x27;s what I&#x27;d say instead.
+473.53-476.25 (2.72s): When money comes up because you&#x27;re splitting something,
+476.49-480.09 (3.60s): talk about the price of the thing, never the size of your check.
+480.33-483.69 (3.36s): You say, &quot;Let me look at it at home, and I&#x27;ll call you Sunday.&quot;
+484.01-485.21 (1.20s): That&#x27;s the whole speech.</pre></div></div></details><details data-outcome="equal"><summary class="equal">R020 · 退休金与朋友叙事 · 固定抽样 · 基本持平</summary><p>两版在所选段落完全一致。</p><small>原文位置 10490–10760；候选在打乱标识中为 A。</small><pre> door was down. Walt came out on the front step in his robe and said his back was acting up. The next Saturday, same thing, same robe. The third Saturday I didn&#x27;t go over.
+I stood at my kitchen window with my coffee and watched his garage door not go up, because I didn&#x27;</pre><div class="pair"><div><b>现行</b><pre>628.09-632.17 (4.08s): The Saturday after that, I walked over for coffee at seven like always,
+632.41-635.69 (3.28s): carrying my own mug, and his garage door was down.
+636.25-640.49 (4.24s): Walt came out on the front step in his robe and said his back was acting up.
+640.97-643.77 (2.80s): The next Saturday, same thing, same robe.
+644.17-646.25 (2.08s): The third Saturday I didn&#x27;t go over.
+646.65-649.29 (2.64s): I stood at my kitchen window with my coffee
+649.29-651.61 (2.32s): and watched his garage door not go up,
+651.85-655.29 (3.44s): because I didn&#x27;t want to make him stand on that step and say it again.
+655.77-658.49 (2.72s): The week before Halloween, Joanne called Linda</pre></div><div><b>候选</b><pre>628.09-632.17 (4.08s): The Saturday after that, I walked over for coffee at seven like always,
+632.41-635.69 (3.28s): carrying my own mug, and his garage door was down.
+636.25-640.49 (4.24s): Walt came out on the front step in his robe and said his back was acting up.
+640.97-643.77 (2.80s): The next Saturday, same thing, same robe.
+644.17-646.25 (2.08s): The third Saturday I didn&#x27;t go over.
+646.65-649.29 (2.64s): I stood at my kitchen window with my coffee
+649.29-651.61 (2.32s): and watched his garage door not go up,
+651.85-655.29 (3.44s): because I didn&#x27;t want to make him stand on that step and say it again.
+655.77-658.49 (2.72s): The week before Halloween, Joanne called Linda</pre></div></div></details><details data-outcome="better"><summary class="better">R021 · 退休金与朋友叙事 · 固定抽样 · 改善</summary><p>amounts to 保持完整；另一版把 to 放在下一条开头。</p><small>原文位置 15361–15631；候选在打乱标识中为 A。</small><pre>have to. Joanne looked at her for a second, and then she said Merry Christmas, a little early, and got in her car.
+I told Linda I&#x27;d only said it to Dennis. She just looked at me. We&#x27;ve both known Dennis Miller&#x27;s wife since our kids were in diapers, and neither one of us</pre><div class="pair"><div><b>现行</b><pre>928.09-929.29 (1.20s): Linda didn&#x27;t answer.
+929.53-933.37 (3.84s): She told me she didn&#x27;t have to. Joanne looked at her for a second,
+933.69-937.69 (4.00s): and then she said Merry Christmas, a little early, and got in her car.
+938.01-940.41 (2.40s): I told Linda I&#x27;d only said it to Dennis.
+940.73-941.85 (1.12s): She just looked at me.
+942.17-945.69 (3.52s): We&#x27;ve both known Dennis Miller&#x27;s wife since our kids were in diapers,
+945.93-948.81 (2.88s): and neither one of us had to say what telling Dennis amounts
+948.89-952.65 (3.76s): to. The first Saturday in December, I walked over there.</pre></div><div><b>候选</b><pre>928.09-929.29 (1.20s): Linda didn&#x27;t answer.
+929.53-933.37 (3.84s): She told me she didn&#x27;t have to. Joanne looked at her for a second,
+933.69-937.69 (4.00s): and then she said Merry Christmas, a little early, and got in her car.
+938.01-940.41 (2.40s): I told Linda I&#x27;d only said it to Dennis.
+940.73-941.85 (1.12s): She just looked at me.
+942.17-945.69 (3.52s): We&#x27;ve both known Dennis Miller&#x27;s wife since our kids were in diapers,
+945.93-948.33 (2.40s): and neither one of us had to say what telling Dennis
+948.33-952.65 (4.32s): amounts to. The first Saturday in December, I walked over there.</pre></div></div></details><details data-outcome="equal"><summary class="equal">R022 · 退休金与朋友叙事 · 固定抽样 · 基本持平</summary><p>两版在所选段落完全一致。</p><small>原文位置 18506–18776；候选在打乱标识中为 B。</small><pre> to walk into church with it on Sunday morning. When somebody asks you how a friend is doing for money, you&#x27;ve got one answer, and it&#x27;s five words long.
+&quot;You&#x27;d have to ask him.&quot; Then you pass the cream and talk about the weather. If I&#x27;d said those five words that Tuesda</pre><div class="pair"><div><b>现行</b><pre>1116.33-1119.69 (3.36s): A number that gets onto the prayer chain is a man&#x27;s reputation,
+1120.09-1122.89 (2.80s): and he has to walk into church with it on Sunday morning.
+1123.69-1126.49 (2.80s): When somebody asks you how a friend is doing for money,
+1126.65-1129.29 (2.64s): you&#x27;ve got one answer, and it&#x27;s five words long.
+1129.77-1130.73 (0.96s): &quot;You&#x27;d have to ask him.&quot;
+1131.21-1133.61 (2.40s): Then you pass the cream and talk about the weather.
+1134.09-1136.49 (2.40s): If I&#x27;d said those five words that Tuesday,
+1136.65-1139.37 (2.72s): Dennis would&#x27;ve shrugged and gone back to his eggs,</pre></div><div><b>候选</b><pre>1116.33-1119.69 (3.36s): A number that gets onto the prayer chain is a man&#x27;s reputation,
+1120.09-1122.89 (2.80s): and he has to walk into church with it on Sunday morning.
+1123.69-1126.49 (2.80s): When somebody asks you how a friend is doing for money,
+1126.65-1129.29 (2.64s): you&#x27;ve got one answer, and it&#x27;s five words long.
+1129.77-1130.73 (0.96s): &quot;You&#x27;d have to ask him.&quot;
+1131.21-1133.61 (2.40s): Then you pass the cream and talk about the weather.
+1134.09-1136.49 (2.40s): If I&#x27;d said those five words that Tuesday,
+1136.65-1139.37 (2.72s): Dennis would&#x27;ve shrugged and gone back to his eggs,</pre></div></div></details><details data-outcome="equal"><summary class="equal">R023 · 退休金与朋友叙事 · 固定抽样 · 基本持平</summary><p>两版在所选段落完全一致。</p><small>原文位置 23654–23924；候选在打乱标识中为 B。</small><pre>she&#x27;d quit going to the Wednesday suppers. She told me she couldn&#x27;t stand being the one everybody was so careful with.
+A proud person can forgive you for a lot of things, but they can&#x27;t stay friends with somebody who looks at them that way.
+
+So here&#x27;s the one I&#x27;d tape t</pre><div class="pair"><div><b>现行</b><pre>1435.29-1438.97 (3.68s): brought casseroles for six weeks, and they meant every one of them.
+1439.37-1442.25 (2.88s): But by spring she&#x27;d quit going to the Wednesday suppers.
+1442.49-1444.41 (1.92s): She told me she couldn&#x27;t stand being
+1444.41-1446.33 (1.92s): the one everybody was so careful with.
+1446.89-1449.61 (2.72s): A proud person can forgive you for a lot of things,
+1449.85-1453.13 (3.28s): but they can&#x27;t stay friends with somebody who looks at them that way.
+1453.85-1456.09 (2.24s): So here&#x27;s the one I&#x27;d tape to the refrigerator.
+1456.49-1457.85 (1.36s): Be sorry for what you did.</pre></div><div><b>候选</b><pre>1435.29-1438.97 (3.68s): brought casseroles for six weeks, and they meant every one of them.
+1439.37-1442.25 (2.88s): But by spring she&#x27;d quit going to the Wednesday suppers.
+1442.49-1444.41 (1.92s): She told me she couldn&#x27;t stand being
+1444.41-1446.33 (1.92s): the one everybody was so careful with.
+1446.89-1449.61 (2.72s): A proud person can forgive you for a lot of things,
+1449.85-1453.13 (3.28s): but they can&#x27;t stay friends with somebody who looks at them that way.
+1453.85-1456.09 (2.24s): So here&#x27;s the one I&#x27;d tape to the refrigerator.
+1456.49-1457.85 (1.36s): Be sorry for what you did.</pre></div></div></details><details data-outcome="equal"><summary class="equal">R024 · 退休金与朋友叙事 · 固定抽样 · 基本持平</summary><p>两版在所选段落完全一致。</p><small>原文位置 27000–27270；候选在打乱标识中为 A。</small><pre> they break a lot easier than you&#x27;d think.
+
+Here&#x27;s one small thing you can do tonight. Take that little notepad by your phone and write one sentence on it: &quot;Let me look at it at home, and I&#x27;ll call you Sunday.&quot;
+Fold it up and put it in your wallet, behind your driver&#x27;s </pre><div class="pair"><div><b>现行</b><pre>1637.45-1639.37 (1.92s): At our age they can&#x27;t be replaced,
+1639.69-1641.77 (2.08s): and they break a lot easier than you&#x27;d think.
+1642.49-1644.49 (2.00s): Here&#x27;s one small thing you can do tonight.
+1644.97-1648.57 (3.60s): Take that little notepad by your phone and write one sentence on it:
+1649.05-1651.77 (2.72s): &quot;Let me look at it at home, and I&#x27;ll call you Sunday.&quot;
+1652.09-1656.09 (4.00s): Fold it up and put it in your wallet, behind your driver&#x27;s license.
+1656.73-1659.69 (2.96s): The next time somebody at a table says let&#x27;s all just be</pre></div><div><b>候选</b><pre>1637.45-1639.37 (1.92s): At our age they can&#x27;t be replaced,
+1639.69-1641.77 (2.08s): and they break a lot easier than you&#x27;d think.
+1642.49-1644.49 (2.00s): Here&#x27;s one small thing you can do tonight.
+1644.97-1648.57 (3.60s): Take that little notepad by your phone and write one sentence on it:
+1649.05-1651.77 (2.72s): &quot;Let me look at it at home, and I&#x27;ll call you Sunday.&quot;
+1652.09-1656.09 (4.00s): Fold it up and put it in your wallet, behind your driver&#x27;s license.
+1656.73-1659.69 (2.96s): The next time somebody at a table says let&#x27;s all just be</pre></div></div></details><details data-outcome="equal"><summary class="equal">R025 · 史前音乐与游戏科普 · 固定抽样 · 基本持平</summary><p>两版在所选段落完全一致。</p><small>原文位置 568–838；候选在打乱标识中为 A。</small><pre>ely stripped of pleasure, where every waking minute was swallowed by the ruthless math of staying alive.
+That picture is not just incomplete; it is dangerously wrong.
+When archaeologists dig into the sites where ancient humans lived, slept, and died, they do not just fi</pre><div class="pair"><div><b>现行</b><pre>24.96-28.24 (3.28s): eating whatever was raw or half-burnt, and dropping dead at age thirty.
+28.48-31.60 (3.12s): A life completely stripped of pleasure, where every waking minute
+31.60-34.32 (2.72s): was swallowed by the ruthless math of staying alive.
+34.48-37.92 (3.44s): That picture is not just incomplete; it is dangerously wrong.
+38.40-41.52 (3.12s): When archaeologists dig into the sites where ancient humans lived,
+41.60-45.12 (3.52s): slept, and died, they do not just find chipped flint spears,
+45.28-47.60 (2.32s): butchered mammoth ribs, and animal hides.</pre></div><div><b>候选</b><pre>24.96-28.24 (3.28s): eating whatever was raw or half-burnt, and dropping dead at age thirty.
+28.48-31.60 (3.12s): A life completely stripped of pleasure, where every waking minute
+31.60-34.32 (2.72s): was swallowed by the ruthless math of staying alive.
+34.48-37.92 (3.44s): That picture is not just incomplete; it is dangerously wrong.
+38.40-41.52 (3.12s): When archaeologists dig into the sites where ancient humans lived,
+41.60-45.12 (3.52s): slept, and died, they do not just find chipped flint spears,
+45.28-47.60 (2.32s): butchered mammoth ribs, and animal hides.</pre></div></div></details><details data-outcome="better"><summary class="better">R026 · 史前音乐与游戏科普 · 固定抽样 · 改善</summary><p>collapsed exhausted into the mud 单独成段，动作与落点完整。</p><small>原文位置 2222–2492；候选在打乱标识中为 B。</small><pre>ery single day until they died.
+If you were working eighteen hours a day just to avoid starvation, obviously you wouldn&#x27;t have time for a flute solo.
+The reality was almost the exact opposite. In the 1960s, anthropologist Marshall Sahlins coined a phrase that permanentl</pre><div class="pair"><div><b>现行</b><pre>112.56-115.92 (3.36s): ran after a woolly rhino until sunset, collapsed exhausted
+115.92-119.68 (3.76s): into the mud, and repeated the cycle every single day until they died.
+119.84-123.20 (3.36s): If you were working eighteen hours a day just to avoid starvation,
+123.60-125.84 (2.24s): obviously you wouldn&#x27;t have time for a flute solo.
+126.00-128.24 (2.24s): The reality was almost the exact opposite.
+128.64-131.92 (3.28s): In the 1960s, anthropologist Marshall Sahlins coined
+131.92-135.12 (3.20s): a phrase that permanently changed how science viewed the Stone Age:
+135.20-138.40 (3.20s): he called hunter-gatherers the &quot;original affluent society.&quot;</pre></div><div><b>候选</b><pre>114.88-116.56 (1.68s): collapsed exhausted into the mud,
+116.72-119.68 (2.96s): and repeated the cycle every single day until they died.
+119.84-123.20 (3.36s): If you were working eighteen hours a day just to avoid starvation,
+123.60-125.84 (2.24s): obviously you wouldn&#x27;t have time for a flute solo.
+126.00-128.24 (2.24s): The reality was almost the exact opposite.
+128.64-131.92 (3.28s): In the 1960s, anthropologist Marshall Sahlins coined
+131.92-135.12 (3.20s): a phrase that permanently changed how science viewed the Stone Age:
+135.20-138.40 (3.20s): he called hunter-gatherers the &quot;original affluent society.&quot;</pre></div></div></details><details data-outcome="better"><summary class="better">R027 · 史前音乐与游戏科普 · 固定抽样 · 改善</summary><p>lives under constant survival stress 保持完整。</p><small>原文位置 4655–4925；候选在打乱标识中为 A。</small><pre> smelt copper, they knew how to play songs.
+Why would evolution allow early humans to waste precious daylight blowing into bird bones instead of sharpening hunting spears? Because music wasn&#x27;t a luxury; it was a social superglue. When a small band of twenty to thirty pe</pre><div class="pair"><div><b>现行</b><pre>246.80-250.16 (3.36s): the message is undeniable: long before humans learned how to plant
+250.16-253.92 (3.76s): wheat, weave linen, or smelt copper, they knew how to play songs.
+254.32-257.60 (3.28s): Why would evolution allow early humans to waste precious daylight
+257.60-260.88 (3.28s): blowing into bird bones instead of sharpening hunting spears?
+261.04-264.16 (3.12s): Because music wasn&#x27;t a luxury; it was a social superglue.
+264.32-266.72 (2.40s): When a small band of twenty to thirty people lives
+266.72-270.16 (3.44s): under constant survival stress, internal friction is fatal.</pre></div><div><b>候选</b><pre>246.80-250.16 (3.36s): the message is undeniable: long before humans learned how to plant
+250.16-253.92 (3.76s): wheat, weave linen, or smelt copper, they knew how to play songs.
+254.32-257.60 (3.28s): Why would evolution allow early humans to waste precious daylight
+257.60-260.88 (3.28s): blowing into bird bones instead of sharpening hunting spears?
+261.04-264.16 (3.12s): Because music wasn&#x27;t a luxury; it was a social superglue.
+264.32-266.48 (2.16s): When a small band of twenty to thirty people
+266.48-270.16 (3.68s): lives under constant survival stress, internal friction is fatal.</pre></div></div></details><details data-outcome="better"><summary class="better">R028 · 史前音乐与游戏科普 · 固定抽样 · 改善</summary><p>blow off steam 保持完整，另一版拆开 off 与 steam。</p><small>原文位置 7542–7812；候选在打乱标识中为 B。</small><pre>nd spear-throwing accuracy trials were staples of camp life.
+Look at any mammalian species: young wolves wrestle, chimps spar, otter pups tackle each other into the water. Play is nature&#x27;s universal classroom for motor skills and emotional self-control. In human camps, </pre><div class="pair"><div><b>现行</b><pre>413.44-415.36 (1.92s): long-distance rock-throwing contests,
+415.52-418.64 (3.12s): and spear-throwing accuracy trials were staples of camp life.
+418.88-422.08 (3.20s): Look at any mammalian species: young wolves wrestle,
+422.16-425.36 (3.20s): chimps spar, otter pups tackle each other into the water.
+425.44-428.64 (3.20s): Play is nature&#x27;s universal classroom for motor skills
+428.72-430.00 (1.28s): and emotional self-control.
+430.40-433.76 (3.36s): In human camps, a wrestling match allowed two young men to blow off
+433.76-436.96 (3.20s): steam, test physical prowess, and settle rivalries without</pre></div><div><b>候选</b><pre>413.44-415.36 (1.92s): long-distance rock-throwing contests,
+415.52-418.64 (3.12s): and spear-throwing accuracy trials were staples of camp life.
+418.88-422.08 (3.20s): Look at any mammalian species: young wolves wrestle,
+422.16-425.36 (3.20s): chimps spar, otter pups tackle each other into the water.
+425.44-428.64 (3.20s): Play is nature&#x27;s universal classroom for motor skills
+428.72-430.00 (1.28s): and emotional self-control.
+430.40-433.20 (2.80s): In human camps, a wrestling match allowed two young men
+433.20-435.52 (2.32s): to blow off steam, test physical prowess,</pre></div></div></details><details data-outcome="equal"><summary class="equal">R029 · 史前音乐与游戏科普 · 固定抽样 · 基本持平</summary><p>主体选定段落相同；可见差别位于窗口边缘，未据此判定优劣。</p><small>原文位置 10178–10448；候选在打乱标识中为 B。</small><pre>h-black, suffocating fissures to reach cathedral-like underground chambers.
+Equipped with primitive hollow stone lamps burning animal fat, they stood before limestone walls and painted masterworks: galloping horses, charging bison, prides of cave lions stalking their pr</pre><div class="pair"><div><b>现行</b><pre>552.80-555.68 (2.88s): in the front of the cave where sunlight reached and families slept.
+555.84-558.64 (2.80s): They crawled hundreds of meters through narrow, pitch-black,
+558.64-561.84 (3.20s): suffocating fissures to reach cathedral-like underground chambers.
+562.24-565.44 (3.20s): Equipped with primitive hollow stone lamps burning animal fat,
+565.60-568.72 (3.12s): they stood before limestone walls and painted masterworks:
+568.88-572.24 (3.36s): galloping horses, charging bison, prides of cave lions
+572.24-575.28 (3.04s): stalking their prey, and delicate stenciled human handprints.
+575.44-577.20 (1.76s): They didn&#x27;t just paint flat silhouettes.</pre></div><div><b>候选</b><pre>553.76-555.68 (1.92s): where sunlight reached and families slept.
+555.84-558.64 (2.80s): They crawled hundreds of meters through narrow, pitch-black,
+558.64-561.84 (3.20s): suffocating fissures to reach cathedral-like underground chambers.
+562.24-565.44 (3.20s): Equipped with primitive hollow stone lamps burning animal fat,
+565.60-568.72 (3.12s): they stood before limestone walls and painted masterworks:
+568.88-572.24 (3.36s): galloping horses, charging bison, prides of cave lions
+572.24-575.28 (3.04s): stalking their prey, and delicate stenciled human handprints.
+575.44-577.20 (1.76s): They didn&#x27;t just paint flat silhouettes.</pre></div></div></details><details data-outcome="better"><summary class="better">R030 · 史前音乐与游戏科普 · 固定抽样 · 改善</summary><p>made of 材料说明完整，另一版把 made 留在上一条。</p><small>原文位置 13642–13912；候选在打乱标识中为 B。</small><pre>shed ivory. Beauty, attraction, and playful romantic flirtation around the warmth of the fire provided some of the richest emotional joy in prehistoric life.
+And then there were the feasts. Most of the time, hunter-gatherers ate modest, measured meals.
+But when a huntin</pre><div class="pair"><div><b>现行</b><pre>741.60-744.88 (3.28s): and black pigments, braiding their hair, and stringing beads made
+744.88-748.40 (3.52s): of ostrich eggshells, perforated teeth, and polished ivory.
+748.96-750.24 (1.28s): Beauty, attraction,
+750.56-753.44 (2.88s): and playful romantic flirtation around the warmth of the fire
+753.60-756.96 (3.36s): provided some of the richest emotional joy in prehistoric life.
+757.12-758.56 (1.44s): And then there were the feasts.
+758.64-761.92 (3.28s): Most of the time, hunter-gatherers ate modest, measured meals.
+762.16-764.40 (2.24s): But when a hunting party successfully brought down
+764.40-766.80 (2.40s): an enormous kill—a mammoth, an aurochs,</pre></div><div><b>候选</b><pre>741.04-744.72 (3.68s): yellow, and black pigments, braiding their hair, and stringing beads
+744.72-748.40 (3.68s): made of ostrich eggshells, perforated teeth, and polished ivory.
+748.96-750.24 (1.28s): Beauty, attraction,
+750.56-753.44 (2.88s): and playful romantic flirtation around the warmth of the fire
+753.60-756.96 (3.36s): provided some of the richest emotional joy in prehistoric life.
+757.12-758.56 (1.44s): And then there were the feasts.
+758.64-761.92 (3.28s): Most of the time, hunter-gatherers ate modest, measured meals.
+762.16-764.40 (2.24s): But when a hunting party successfully brought down
+764.40-766.80 (2.40s): an enormous kill—a mammoth, an aurochs,</pre></div></div></details><details data-outcome="mixed"><summary class="mixed">R031 · 史前音乐与游戏科普 · 固定抽样 · 有改善也有退步</summary><p>移除了 They became 残片，并保留 teeth and bones，但新片段较短且句首前部仍跨从句。</p><small>原文位置 15672–15942；候选在打乱标识中为 B。</small><pre> became playmates, bed-warmers on freezing nights, and beloved companions.
+Near the town of Bonn-Oberkassel, archaeologists excavated an Upper Paleolithic burial dating back roughly 14,000 years. Inside lay the skeletons of an adult man, an adult woman, and an approxima</pre><div class="pair"><div><b>现行</b><pre>855.28-857.52 (2.24s): with hunting, tracking, and camp security,
+857.52-861.12 (3.60s): their role quickly evolved far beyond mere utility. They became
+861.12-864.72 (3.60s): playmates, bed-warmers on freezing nights, and beloved companions.
+864.96-868.48 (3.52s): Near the town of Bonn-Oberkassel, archaeologists excavated
+868.48-872.40 (3.92s): an Upper Paleolithic burial dating back roughly 14,000 years.
+872.56-874.72 (2.16s): Inside lay the skeletons of an adult man,
+874.96-878.16 (3.20s): an adult woman, and an approximately seven-month-old puppy.
+878.56-880.64 (2.08s): Pathological analysis of the puppy&#x27;s teeth</pre></div><div><b>候选</b><pre>856.48-860.56 (4.08s): and camp security, their role quickly evolved far beyond mere utility.
+860.72-862.48 (1.76s): They became playmates, bed-warmers
+862.48-864.72 (2.24s): on freezing nights, and beloved companions.
+864.96-868.48 (3.52s): Near the town of Bonn-Oberkassel, archaeologists excavated
+868.48-872.40 (3.92s): an Upper Paleolithic burial dating back roughly 14,000 years.
+872.56-874.72 (2.16s): Inside lay the skeletons of an adult man,
+874.96-878.16 (3.20s): an adult woman, and an approximately seven-month-old puppy.
+878.56-881.76 (3.20s): Pathological analysis of the puppy&#x27;s teeth and bones revealed</pre></div></div></details><details data-outcome="better"><summary class="better">R032 · 史前音乐与游戏科普 · 固定抽样 · 改善</summary><p>suffer from、rather than 完整，枚举也在逗号后切分。</p><small>原文位置 16907–17177；候选在打乱标识中为 B。</small><pre> have climate-controlled apartments, air conditioning, antibiotics, infinite food deliveries, and supercomputers in our pockets. Yet millions of modern people suffer from chronic stress, burnout, isolation, and clinical depression. We work forty, fifty, sixty hours a we</pre><div class="pair"><div><b>现行</b><pre>924.88-928.16 (3.28s): We live in an era of unprecedented technological comfort.
+928.32-931.12 (2.80s): We have climate-controlled apartments, air conditioning,
+931.36-933.68 (2.32s): antibiotics, infinite food deliveries,
+933.76-935.52 (1.76s): and supercomputers in our pockets.
+935.60-937.52 (1.92s): Yet millions of modern people suffer
+937.52-941.44 (3.92s): from chronic stress, burnout, isolation, and clinical depression.
+941.92-946.24 (4.32s): We work forty, fifty, sixty hours a week at jobs we often tolerate rather
+946.24-948.96 (2.72s): than love, constantly sacrificing our present hours</pre></div><div><b>候选</b><pre>924.88-928.16 (3.28s): We live in an era of unprecedented technological comfort.
+928.32-931.12 (2.80s): We have climate-controlled apartments, air conditioning,
+931.36-933.68 (2.32s): antibiotics, infinite food deliveries,
+933.76-935.52 (1.76s): and supercomputers in our pockets.
+935.60-938.64 (3.04s): Yet millions of modern people suffer from chronic stress,
+938.80-941.44 (2.64s): burnout, isolation, and clinical depression.
+941.92-944.48 (2.56s): We work forty, fifty, sixty hours a week
+944.48-946.80 (2.32s): at jobs we often tolerate rather than love,</pre></div></div></details><details data-outcome="equal"><summary class="equal">R033 · 家庭储蓄叙事 · 固定抽样 · 基本持平</summary><p>两版在所选段落完全一致。</p><small>原文位置 717–987；候选在打乱标识中为 B。</small><pre>hile longer. Then she nodded at the phone and said, &quot;What&#x27;s the password to that thing, anyway?&quot;
+
+&quot;Why would you need it?&quot; I said.
+
+She went back upstairs. I heard the bedroom door, and I remember thinking I&#x27;d come out ahead on that one. That ought to tell you where my </pre><div class="pair"><div><b>现行</b><pre>38.96-42.40 (3.44s): The last one, I fought harder than the other four put together.
+42.72-44.48 (1.76s): She stood there a while longer.
+44.96-46.72 (1.76s): Then she nodded at the phone and said,
+47.12-49.12 (2.00s): &quot;What&#x27;s the password to that thing, anyway?&quot;
+49.44-51.04 (1.60s): &quot;Why would you need it?&quot; I said.
+51.36-52.72 (1.36s): She went back upstairs.
+53.12-54.40 (1.28s): I heard the bedroom door,
+54.48-56.96 (2.48s): and I remember thinking I&#x27;d come out ahead on that one.
+57.44-59.92 (2.48s): That ought to tell you where my head was in those days.
+60.24-61.36 (1.12s): I&#x27;m seventy-three.</pre></div><div><b>候选</b><pre>38.96-42.40 (3.44s): The last one, I fought harder than the other four put together.
+42.72-44.48 (1.76s): She stood there a while longer.
+44.96-46.72 (1.76s): Then she nodded at the phone and said,
+47.12-49.12 (2.00s): &quot;What&#x27;s the password to that thing, anyway?&quot;
+49.44-51.04 (1.60s): &quot;Why would you need it?&quot; I said.
+51.36-52.72 (1.36s): She went back upstairs.
+53.12-54.40 (1.28s): I heard the bedroom door,
+54.48-56.96 (2.48s): and I remember thinking I&#x27;d come out ahead on that one.
+57.44-59.92 (2.48s): That ought to tell you where my head was in those days.
+60.24-61.36 (1.12s): I&#x27;m seventy-three.</pre></div></div></details><details data-outcome="equal"><summary class="equal">R034 · 家庭储蓄叙事 · 固定抽样 · 基本持平</summary><p>两版在所选段落完全一致。</p><small>原文位置 4156–4426；候选在打乱标识中为 B。</small><pre>ee got replaced, and whose grandkid got engaged to somebody nobody&#x27;s met. Money comes up more than you&#x27;d think.
+Somebody&#x27;s always grumbling about what the insurance went up to, or what a set of tires costs now. I&#x27;d been going for nine years. And one morning, I looked ar</pre><div class="pair"><div><b>现行</b><pre>241.20-243.92 (2.72s): she just brings the pot over and doesn&#x27;t bother asking.
+244.48-248.16 (3.68s): We cover the weather, the price of corn, whose knee got replaced,
+248.48-251.60 (3.12s): and whose grandkid got engaged to somebody nobody&#x27;s met.
+252.00-253.76 (1.76s): Money comes up more than you&#x27;d think.
+254.08-257.12 (3.04s): Somebody&#x27;s always grumbling about what the insurance went up
+257.20-259.76 (2.56s): to, or what a set of tires costs now.
+260.00-261.68 (1.68s): I&#x27;d been going for nine years.
+261.92-264.24 (2.32s): And one morning, I looked around that table
+264.32-266.64 (2.32s): and saw something I&#x27;d never paid any attention</pre></div><div><b>候选</b><pre>241.20-243.92 (2.72s): she just brings the pot over and doesn&#x27;t bother asking.
+244.48-248.16 (3.68s): We cover the weather, the price of corn, whose knee got replaced,
+248.48-251.60 (3.12s): and whose grandkid got engaged to somebody nobody&#x27;s met.
+252.00-253.76 (1.76s): Money comes up more than you&#x27;d think.
+254.08-257.12 (3.04s): Somebody&#x27;s always grumbling about what the insurance went up
+257.20-259.76 (2.56s): to, or what a set of tires costs now.
+260.00-261.68 (1.68s): I&#x27;d been going for nine years.
+261.92-264.24 (2.32s): And one morning, I looked around that table
+264.32-266.64 (2.32s): and saw something I&#x27;d never paid any attention</pre></div></div></details><details data-outcome="equal"><summary class="equal">R035 · 家庭储蓄叙事 · 固定抽样 · 基本持平</summary><p>两版在所选段落完全一致。</p><small>原文位置 9853–10123；候选在打乱标识中为 B。</small><pre>
+&quot;You&#x27;re watching the wrong number, Dale,&quot; Marvin said. &quot;That big one jumps around every day. It&#x27;s supposed to. These two hardly move. I call them the floor. Everything I need to stand on is right here on this napkin. Whatever&#x27;s in the bank is just what&#x27;s above the floo</pre><div class="pair"><div><b>现行</b><pre>579.84-582.32 (2.48s): For eight years I&#x27;d been staring at one number,
+582.48-584.24 (1.76s): and I didn&#x27;t know the two that mattered.
+584.64-587.44 (2.80s): &quot;You&#x27;re watching the wrong number, Dale,&quot; Marvin said.
+587.84-589.92 (2.08s): &quot;That big one jumps around every day.
+590.08-592.80 (2.72s): It&#x27;s supposed to. These two hardly move.
+592.80-594.08 (1.28s): I call them the floor.
+594.64-597.92 (3.28s): Everything I need to stand on is right here on this napkin.
+598.48-601.20 (2.72s): Whatever&#x27;s in the bank is just what&#x27;s above the floor,
+601.36-603.52 (2.16s): and it can go up and down all it wants.</pre></div><div><b>候选</b><pre>579.84-582.32 (2.48s): For eight years I&#x27;d been staring at one number,
+582.48-584.24 (1.76s): and I didn&#x27;t know the two that mattered.
+584.64-587.44 (2.80s): &quot;You&#x27;re watching the wrong number, Dale,&quot; Marvin said.
+587.84-589.92 (2.08s): &quot;That big one jumps around every day.
+590.08-592.80 (2.72s): It&#x27;s supposed to. These two hardly move.
+592.80-594.08 (1.28s): I call them the floor.
+594.64-597.92 (3.28s): Everything I need to stand on is right here on this napkin.
+598.48-601.20 (2.72s): Whatever&#x27;s in the bank is just what&#x27;s above the floor,
+601.36-603.52 (2.16s): and it can go up and down all it wants.</pre></div></div></details><details data-outcome="equal"><summary class="equal">R036 · 家庭储蓄叙事 · 固定抽样 · 基本持平</summary><p>两版在所选段落完全一致。</p><small>原文位置 11895–12165；候选在打乱标识中为 A。</small><pre>p their eye on those two numbers and let the big one do whatever it&#x27;s going to do.
+
+The third thing, I saw the ending first and had to work backwards to figure out how it happened.
+
+That January, Louise&#x27;s furnace quit. It was eleven below zero, the kind of cold where th</pre><div class="pair"><div><b>现行</b><pre>705.92-709.76 (3.84s): Louise, it turned out, could rattle hers off too, and so could Eddie.
+710.16-712.16 (2.00s): They keep their eye on those two numbers
+712.16-714.56 (2.40s): and let the big one do whatever it&#x27;s going to do.
+715.36-717.68 (2.32s): The third thing, I saw the ending first
+717.68-720.32 (2.64s): and had to work backwards to figure out how it happened.
+720.96-723.12 (2.16s): That January, Louise&#x27;s furnace quit.
+723.76-726.32 (2.56s): It was eleven below zero, the kind of cold
+726.32-729.84 (3.52s): where the inside of your nose freezes on the walk out to get the paper.
+730.32-733.12 (2.80s): She called the furnace man, he told her the whole thing had</pre></div><div><b>候选</b><pre>705.92-709.76 (3.84s): Louise, it turned out, could rattle hers off too, and so could Eddie.
+710.16-712.16 (2.00s): They keep their eye on those two numbers
+712.16-714.56 (2.40s): and let the big one do whatever it&#x27;s going to do.
+715.36-717.68 (2.32s): The third thing, I saw the ending first
+717.68-720.32 (2.64s): and had to work backwards to figure out how it happened.
+720.96-723.12 (2.16s): That January, Louise&#x27;s furnace quit.
+723.76-726.32 (2.56s): It was eleven below zero, the kind of cold
+726.32-729.84 (3.52s): where the inside of your nose freezes on the walk out to get the paper.
+730.32-733.12 (2.80s): She called the furnace man, he told her the whole thing had</pre></div></div></details><details data-outcome="equal"><summary class="equal">R037 · 家庭储蓄叙事 · 固定抽样 · 基本持平</summary><p>两版在所选段落完全一致。</p><small>原文位置 15843–16113；候选在打乱标识中为 A。</small><pre>tting in a chemistry lab at college, two hours up the road, and he&#x27;s never set foot in Mexico in his life.
+
+Eddie told us all this with his cup rattling on the saucer, laughing the way you laugh after you nearly back over something in the driveway.
+
+Louise said, &quot;That&#x27;s</pre><div class="pair"><div><b>现行</b><pre>940.64-942.56 (1.92s): The boy picked up on the second ring.
+942.88-946.72 (3.84s): He was sitting in a chemistry lab at college, two hours up the road,
+947.12-949.68 (2.56s): and he&#x27;s never set foot in Mexico in his life.
+950.40-954.24 (3.84s): Eddie told us all this with his cup rattling on the saucer, laughing
+954.24-957.52 (3.28s): the way you laugh after you nearly back over something in the driveway.
+957.76-960.08 (2.32s): Louise said, &quot;That&#x27;s my rule too.
+960.24-962.40 (2.16s): Five hundred dollars and a night&#x27;s sleep.&quot;</pre></div><div><b>候选</b><pre>940.64-942.56 (1.92s): The boy picked up on the second ring.
+942.88-946.72 (3.84s): He was sitting in a chemistry lab at college, two hours up the road,
+947.12-949.68 (2.56s): and he&#x27;s never set foot in Mexico in his life.
+950.40-954.24 (3.84s): Eddie told us all this with his cup rattling on the saucer, laughing
+954.24-957.52 (3.28s): the way you laugh after you nearly back over something in the driveway.
+957.76-960.08 (2.32s): Louise said, &quot;That&#x27;s my rule too.
+960.24-962.40 (2.16s): Five hundred dollars and a night&#x27;s sleep.&quot;</pre></div></div></details><details data-outcome="equal"><summary class="equal">R038 · 家庭储蓄叙事 · 固定抽样 · 基本持平</summary><p>两版在所选段落完全一致。</p><small>原文位置 20060–20330；候选在打乱标识中为 B。</small><pre>d up from the crossword. &quot;Where&#x27;d you go so early?&quot;
+
+&quot;The bank,&quot; I said.
+
+&quot;Everything all right?&quot;
+
+&quot;It&#x27;s handled,&quot; I said.
+
+I heard it come out of my mouth, and I stopped with one arm still in my coat. I must have said those two words to her a thousand times in forty-si</pre><div class="pair"><div><b>现行</b><pre>1197.28-1199.44 (2.16s): and I&#x27;d have said it like it was something to be proud
+1199.44-1203.92 (4.48s): of. When I pulled into the driveway, Carol looked up from the crossword.
+1204.32-1205.60 (1.28s): &quot;Where&#x27;d you go so early?&quot;
+1206.08-1207.44 (1.36s): &quot;The bank,&quot; I said.
+1207.76-1208.72 (0.96s): &quot;Everything all right?&quot;
+1209.04-1210.48 (1.44s): &quot;It&#x27;s handled,&quot; I said.
+1211.04-1215.28 (4.24s): I heard it come out of my mouth, and I stopped with one arm still in my coat.
+1215.68-1217.12 (1.44s): I must have said those two words
+1217.20-1219.92 (2.72s): to her a thousand times in forty-six years.
+1220.64-1224.16 (3.52s): That morning, for whatever reason, they sounded like a door shutting.</pre></div><div><b>候选</b><pre>1197.28-1199.44 (2.16s): and I&#x27;d have said it like it was something to be proud
+1199.44-1203.92 (4.48s): of. When I pulled into the driveway, Carol looked up from the crossword.
+1204.32-1205.60 (1.28s): &quot;Where&#x27;d you go so early?&quot;
+1206.08-1207.44 (1.36s): &quot;The bank,&quot; I said.
+1207.76-1208.72 (0.96s): &quot;Everything all right?&quot;
+1209.04-1210.48 (1.44s): &quot;It&#x27;s handled,&quot; I said.
+1211.04-1215.28 (4.24s): I heard it come out of my mouth, and I stopped with one arm still in my coat.
+1215.68-1217.12 (1.44s): I must have said those two words
+1217.20-1219.92 (2.72s): to her a thousand times in forty-six years.
+1220.64-1224.16 (3.52s): That morning, for whatever reason, they sounded like a door shutting.</pre></div></div></details><details data-outcome="better"><summary class="better">R039 · 家庭储蓄叙事 · 固定抽样 · 改善</summary><p>what it was for 完整；另一版只把 for 留到下一条。</p><small>原文位置 22266–22536；候选在打乱标识中为 A。</small><pre>cade money.
+I showed her the card and told her what the two numbers meant, and that we were six hundred and twenty dollars to the good every month even if we never touched the rest. I told her about the parking lot. I even told her about Marvin&#x27;s napkin.
+
+When I was don</pre><div class="pair"><div><b>现行</b><pre>1328.24-1330.72 (2.48s): I showed her where the house money was and what it was
+1330.72-1332.80 (2.08s): for, and the rainy-decade money.
+1333.12-1336.08 (2.96s): I showed her the card and told her what the two numbers meant,
+1336.40-1338.64 (2.24s): and that we were six hundred and twenty dollars
+1338.72-1341.76 (3.04s): to the good every month even if we never touched the rest.
+1342.16-1343.84 (1.68s): I told her about the parking lot.
+1344.16-1346.32 (2.16s): I even told her about Marvin&#x27;s napkin.
+1347.12-1350.72 (3.60s): When I was done, she took off her glasses and set them on the folder.
+1351.12-1354.00 (2.88s): &quot;Your name&#x27;s the only one on that big account,&quot; she said.</pre></div><div><b>候选</b><pre>1328.24-1330.16 (1.92s): I showed her where the house money was
+1330.16-1332.80 (2.64s): and what it was for, and the rainy-decade money.
+1333.12-1336.08 (2.96s): I showed her the card and told her what the two numbers meant,
+1336.40-1338.64 (2.24s): and that we were six hundred and twenty dollars
+1338.72-1341.76 (3.04s): to the good every month even if we never touched the rest.
+1342.16-1343.84 (1.68s): I told her about the parking lot.
+1344.16-1346.32 (2.16s): I even told her about Marvin&#x27;s napkin.
+1347.12-1350.72 (3.60s): When I was done, she took off her glasses and set them on the folder.
+1351.12-1354.00 (2.88s): &quot;Your name&#x27;s the only one on that big account,&quot; she said.</pre></div></div></details><details data-outcome="equal"><summary class="equal">R040 · 家庭储蓄叙事 · 固定抽样 · 基本持平</summary><p>两版在所选段落完全一致。</p><small>原文位置 25041–25311；候选在打乱标识中为 B。</small><pre>hese days. He said it was handled right up to the morning of the sale. I&#x27;d been saying the same thing to Carol for forty-six years.
+I believe we both meant it as a kindness. We were trying to carry it so our wives wouldn&#x27;t have to. What neither one of us figured out was</pre><div class="pair"><div><b>现行</b><pre>1489.36-1492.08 (2.72s): the one who&#x27;d be left holding it all if you weren&#x27;t around.
+1492.64-1495.44 (2.80s): I think about my dad a good deal more these days.
+1495.76-1498.56 (2.80s): He said it was handled right up to the morning of the sale.
+1498.88-1502.00 (3.12s): I&#x27;d been saying the same thing to Carol for forty-six years.
+1502.48-1504.72 (2.24s): I believe we both meant it as a kindness.
+1505.04-1508.40 (3.36s): We were trying to carry it so our wives wouldn&#x27;t have to. What
+1508.40-1511.60 (3.20s): neither one of us figured out was that they were carrying it anyway.
+1511.92-1513.68 (1.76s): They were just carrying it in the dark.</pre></div><div><b>候选</b><pre>1489.36-1492.08 (2.72s): the one who&#x27;d be left holding it all if you weren&#x27;t around.
+1492.64-1495.44 (2.80s): I think about my dad a good deal more these days.
+1495.76-1498.56 (2.80s): He said it was handled right up to the morning of the sale.
+1498.88-1502.00 (3.12s): I&#x27;d been saying the same thing to Carol for forty-six years.
+1502.48-1504.72 (2.24s): I believe we both meant it as a kindness.
+1505.04-1508.40 (3.36s): We were trying to carry it so our wives wouldn&#x27;t have to. What
+1508.40-1511.60 (3.20s): neither one of us figured out was that they were carrying it anyway.
+1511.92-1513.68 (1.76s): They were just carrying it in the dark.</pre></div></div></details><details data-outcome="better"><summary class="better">R041 · 当前心理学解说（回归） · 固定抽样 · 改善</summary><p>linked with 和 love at first sight 保持完整，实验背景在逗号后切分。</p><small>原文位置 323–593；候选在打乱标识中为 B。</small><pre>irst sight is a tricky paradox. It&#x27;s more likely to happen to men than women, and way more likely to happen when the woman they see is attractive. So, for many years, researchers believed it&#x27;s only linked with passion and sexual desire. But, during a 2017 experiment, th</pre><div class="pair"><div><b>现行</b><pre>16.00-17.52 (1.52s): Phase One: Limerence.
+17.76-19.84 (2.08s): Love at first sight is a tricky paradox.
+19.92-22.00 (2.08s): It&#x27;s more likely to happen to men than women,
+22.24-25.44 (3.20s): and way more likely to happen when the woman they see is attractive.
+25.68-28.40 (2.72s): So, for many years, researchers believed it&#x27;s only linked
+28.40-30.08 (1.68s): with passion and sexual desire.
+30.16-33.04 (2.88s): But, during a 2017 experiment, they discovered
+33.04-34.80 (1.76s): that the subjects who experienced love</pre></div><div><b>候选</b><pre>16.00-17.52 (1.52s): Phase One: Limerence.
+17.76-19.84 (2.08s): Love at first sight is a tricky paradox.
+19.92-22.00 (2.08s): It&#x27;s more likely to happen to men than women,
+22.24-25.44 (3.20s): and way more likely to happen when the woman they see is attractive.
+25.68-27.68 (2.00s): So, for many years, researchers believed
+27.68-30.08 (2.40s): it&#x27;s only linked with passion and sexual desire.
+30.16-32.40 (2.24s): But, during a 2017 experiment,
+32.48-35.44 (2.96s): they discovered that the subjects who experienced love at first sight
+35.60-37.92 (2.32s): didn&#x27;t only feel passion and sexual desire,</pre></div></div></details><details data-outcome="better"><summary class="better">R042 · 当前心理学解说（回归） · 固定抽样 · 改善</summary><p>falling in love 与 committing to 均保持完整；跨句连接仍存在。</p><small>原文位置 1219–1489；候选在打乱标识中为 B。</small><pre>ress. The male brain, it adapted over centuries. Since they were looking for a faithful partner, falling in love fast would be an honest signal that he is ready to commit to her. But, that would happen only with women that seem worth committing to. Because out of these </pre><div class="pair"><div><b>现行</b><pre>59.44-62.96 (3.52s): The man could simply leave, abandoning her to raise the child alone.
+63.20-66.32 (3.12s): So, their brain adapted to be a bit harder to impress.
+66.48-69.12 (2.64s): The male brain, it adapted over centuries.
+69.52-72.00 (2.48s): Since they were looking for a faithful partner, falling
+72.00-75.44 (3.44s): in love fast would be an honest signal that he is ready to commit to her.
+75.60-78.80 (3.20s): But, that would happen only with women that seem worth committing
+78.88-82.56 (3.68s): to. Because out of these two women, only one makes you see a house
+82.64-85.68 (3.04s): and two kids, while the other only makes you feel lustful.</pre></div><div><b>候选</b><pre>59.44-62.96 (3.52s): The man could simply leave, abandoning her to raise the child alone.
+63.20-66.32 (3.12s): So, their brain adapted to be a bit harder to impress.
+66.48-69.12 (2.64s): The male brain, it adapted over centuries.
+69.52-72.32 (2.80s): Since they were looking for a faithful partner, falling in love
+72.32-75.44 (3.12s): fast would be an honest signal that he is ready to commit to her.
+75.60-78.40 (2.80s): But, that would happen only with women that seem worth
+78.40-82.08 (3.68s): committing to. Because out of these two women, only one makes you see
+82.08-85.68 (3.60s): a house and two kids, while the other only makes you feel lustful.</pre></div></div></details><details data-outcome="better"><summary class="better">R043 · 当前心理学解说（回归） · 固定抽样 · 改善</summary><p>主语与谓语分开、vasopressin 同位说明单独成段更自然。</p><small>原文位置 1611–1881；候选在打乱标识中为 A。</small><pre>y theory comes hand in hand with the biological process of falling in love. You see, for women, falling in love is linked to the oxytocin hormone, and that hormone tends to peak during orgasm. For men, testosterone disrupts the action of oxytocin. So, our initial bondin</pre><div class="pair"><div><b>现行</b><pre>82.64-85.68 (3.04s): and two kids, while the other only makes you feel lustful.
+85.92-88.32 (2.40s): And this evolutionary theory comes hand in hand
+88.32-90.88 (2.56s): with the biological process of falling in love.
+91.04-94.80 (3.76s): You see, for women, falling in love is linked to the oxytocin hormone,
+95.04-97.28 (2.24s): and that hormone tends to peak during orgasm.
+97.52-100.80 (3.28s): For men, testosterone disrupts the action of oxytocin.
+101.28-104.56 (3.28s): So, our initial bonding process is biologically linked
+104.56-108.24 (3.68s): with vasopressin, a hormone that rises during sexual anticipation</pre></div><div><b>候选</b><pre>82.08-85.68 (3.60s): a house and two kids, while the other only makes you feel lustful.
+85.92-88.32 (2.40s): And this evolutionary theory comes hand in hand
+88.32-90.88 (2.56s): with the biological process of falling in love.
+91.04-94.80 (3.76s): You see, for women, falling in love is linked to the oxytocin hormone,
+95.04-97.28 (2.24s): and that hormone tends to peak during orgasm.
+97.52-100.80 (3.28s): For men, testosterone disrupts the action of oxytocin.
+101.28-103.28 (2.00s): So, our initial bonding process
+103.28-105.52 (2.24s): is biologically linked with vasopressin,</pre></div></div></details><details data-outcome="equal"><summary class="equal">R044 · 当前心理学解说（回归） · 固定抽样 · 基本持平</summary><p>两版在所选段落完全一致。</p><small>原文位置 2464–2734；候选在打乱标识中为 B。</small><pre>ly decides to fully commit to a woman, his body starts to experience a loss of testosterone. And that loss allows his oxytocin to rise and complete that bonding process.
+
+Phase Two: Trust.
+
+500 Days of Summer is a movie with a simple theme. A hopeless romantic named Tom</pre><div class="pair"><div><b>现行</b><pre>130.64-133.20 (2.56s): No, because as expressed by Dawn Maslar,
+133.28-136.32 (3.04s): when a man psychologically decides to fully commit to a woman,
+136.64-139.52 (2.88s): his body starts to experience a loss of testosterone.
+139.68-142.16 (2.48s): And that loss allows his oxytocin to rise
+142.16-144.00 (1.84s): and complete that bonding process.
+144.16-145.84 (1.68s): Phase Two: Trust.
+146.24-149.04 (2.80s): 500 Days of Summer is a movie with a simple theme.
+149.28-152.08 (2.80s): A hopeless romantic named Tom meets a beautiful woman
+152.08-154.08 (2.00s): that shares his taste in music, Summer.</pre></div><div><b>候选</b><pre>130.64-133.20 (2.56s): No, because as expressed by Dawn Maslar,
+133.28-136.32 (3.04s): when a man psychologically decides to fully commit to a woman,
+136.64-139.52 (2.88s): his body starts to experience a loss of testosterone.
+139.68-142.16 (2.48s): And that loss allows his oxytocin to rise
+142.16-144.00 (1.84s): and complete that bonding process.
+144.16-145.84 (1.68s): Phase Two: Trust.
+146.24-149.04 (2.80s): 500 Days of Summer is a movie with a simple theme.
+149.28-152.08 (2.80s): A hopeless romantic named Tom meets a beautiful woman
+152.08-154.08 (2.00s): that shares his taste in music, Summer.</pre></div></div></details><details data-outcome="better"><summary class="better">R045 · 当前心理学解说（回归） · 固定抽样 · 改善</summary><p>dull, repetitive, and emotionally flat 整个条件枚举保持完整。</p><small>原文位置 3633–3903；候选在打乱标识中为 A。</small><pre>your life doesn&#x27;t necessarily have to feel boring for a girl&#x27;s presence to feel refreshing.
+
+According to the author David Deida, women can have hot feminine energy—stimulating, passionate, wild, and challenging—and cool feminine energy—soothing, nurturing, relaxed, and</pre><div class="pair"><div><b>现行</b><pre>193.20-196.32 (3.12s): That&#x27;s why Summer&#x27;s presence in his life felt so refreshing.
+196.48-199.04 (2.56s): But your life doesn&#x27;t necessarily have to feel boring
+199.04-200.88 (1.84s): for a girl&#x27;s presence to feel refreshing.
+201.20-202.88 (1.68s): According to the author David Deida,
+202.96-206.64 (3.68s): women can have hot feminine energy—stimulating, passionate,
+206.72-210.24 (3.52s): wild, and challenging—and cool feminine energy—soothing,
+210.32-212.48 (2.16s): nurturing, relaxed, and peaceful.
+212.80-214.88 (2.08s): If your life feels dull, repetitive,</pre></div><div><b>候选</b><pre>193.20-196.32 (3.12s): That&#x27;s why Summer&#x27;s presence in his life felt so refreshing.
+196.48-199.04 (2.56s): But your life doesn&#x27;t necessarily have to feel boring
+199.04-200.88 (1.84s): for a girl&#x27;s presence to feel refreshing.
+201.20-202.88 (1.68s): According to the author David Deida,
+202.96-206.64 (3.68s): women can have hot feminine energy—stimulating, passionate,
+206.72-210.24 (3.52s): wild, and challenging—and cool feminine energy—soothing,
+210.32-212.48 (2.16s): nurturing, relaxed, and peaceful.
+212.80-215.92 (3.12s): If your life feels dull, repetitive, and emotionally flat,</pre></div></div></details><details data-outcome="better"><summary class="better">R046 · 当前心理学解说（回归） · 固定抽样 · 改善</summary><p>rather than 与 to interpret friendliness 保持完整。</p><small>原文位置 4686–4956；候选在打乱标识中为 B。</small><pre>r partners the way we want to see them.
+
+“I love how she makes me feel. Like... like anything&#x27;s possible.”
+
+C. Poorer Social Perception.
+
+Men are more likely than women to interpret friendliness as romantic interest. In the movie, Summer was indeed pretty clear about he</pre><div class="pair"><div><b>现行</b><pre>248.32-250.32 (2.00s): than their partner&#x27;s self-reported description.
+250.48-253.60 (3.12s): So, we tend to see our partners the way we want to see them.
+254.24-255.76 (1.52s): “I love how she makes me feel.
+255.84-258.16 (2.32s): Like... like anything&#x27;s possible.”
+258.32-260.24 (1.92s): C. Poorer Social Perception.
+260.72-262.72 (2.00s): Men are more likely than women to interpret
+262.72-264.48 (1.76s): friendliness as romantic interest.
+264.64-267.84 (3.20s): In the movie, Summer was indeed pretty clear about her intentions, but
+267.84-271.20 (3.36s): she also kept him as a friend even though she was aware of his feelings.</pre></div><div><b>候选</b><pre>248.00-250.32 (2.32s): rather than their partner&#x27;s self-reported description.
+250.48-253.60 (3.12s): So, we tend to see our partners the way we want to see them.
+254.24-255.76 (1.52s): “I love how she makes me feel.
+255.84-258.16 (2.32s): Like... like anything&#x27;s possible.”
+258.32-260.24 (1.92s): C. Poorer Social Perception.
+260.72-262.16 (1.44s): Men are more likely than women
+262.16-264.48 (2.32s): to interpret friendliness as romantic interest.
+264.64-267.84 (3.20s): In the movie, Summer was indeed pretty clear about her intentions, but
+267.84-271.20 (3.36s): she also kept him as a friend even though she was aware of his feelings.</pre></div></div></details><details data-outcome="equal"><summary class="equal">R047 · 当前心理学解说（回归） · 固定抽样 · 基本持平</summary><p>两版在所选段落完全一致。</p><small>原文位置 5122–5392；候选在打乱标识中为 A。</small><pre>ten also the ones who invest more in the relationship.
+
+“I like you, Tom. I just don&#x27;t want a relationship.”
+
+“Well, you&#x27;re not the only one who gets a say in this. I do, too. And I say we&#x27;re a couple, goddamn it.”
+
+Now, according to the best pickup artist of all time, </pre><div class="pair"><div><b>现行</b><pre>271.28-274.56 (3.28s): As a recurring pattern, people who tend to fall in love more quickly
+274.64-277.44 (2.80s): are often also the ones who invest more in the relationship.
+278.00-278.88 (0.88s): “I like you, Tom.
+279.36-280.88 (1.52s): I just don&#x27;t want a relationship.”
+281.12-283.28 (2.16s): “Well, you&#x27;re not the only one who gets a say in this.
+283.44-284.24 (0.80s): I do, too.
+284.32-286.00 (1.68s): And I say we&#x27;re a couple, goddamn it.”
+286.24-290.24 (4.00s): Now, according to the best pickup artist of all time, Erik von Markovik,
+290.24-293.44 (3.20s): the main ways to make a girl invest are emotional investment—make</pre></div><div><b>候选</b><pre>271.28-274.56 (3.28s): As a recurring pattern, people who tend to fall in love more quickly
+274.64-277.44 (2.80s): are often also the ones who invest more in the relationship.
+278.00-278.88 (0.88s): “I like you, Tom.
+279.36-280.88 (1.52s): I just don&#x27;t want a relationship.”
+281.12-283.28 (2.16s): “Well, you&#x27;re not the only one who gets a say in this.
+283.44-284.24 (0.80s): I do, too.
+284.32-286.00 (1.68s): And I say we&#x27;re a couple, goddamn it.”
+286.24-290.24 (4.00s): Now, according to the best pickup artist of all time, Erik von Markovik,
+290.24-293.44 (3.20s): the main ways to make a girl invest are emotional investment—make</pre></div></div></details><details data-outcome="equal"><summary class="equal">R048 · 当前心理学解说（回归） · 固定抽样 · 基本持平</summary><p>两版在所选段落完全一致。</p><small>原文位置 5950–6220；候选在打乱标识中为 A。</small><pre>me location as him. They met only five times, with each meeting lasting less than 20 minutes. Enough for him to madly fall for her. So, one day he decided to propose to her.
+
+She turned him down. After a few years, he moved to the United States. Here the small romantic </pre><div class="pair"><div><b>现行</b><pre>316.88-318.24 (1.36s): There he met Hetty Kelly,
+318.40-321.52 (3.12s): an Irish-born dancer who performed at the same location as him.
+321.60-323.12 (1.52s): They met only five times,
+323.20-325.44 (2.24s): with each meeting lasting less than 20 minutes.
+325.60-327.36 (1.76s): Enough for him to madly fall for her.
+327.76-330.32 (2.56s): So, one day he decided to propose to her.
+331.04-331.92 (0.88s): She turned him down.
+332.08-334.56 (2.48s): After a few years, he moved to the United States.
+334.64-337.52 (2.88s): Here the small romantic actor became a comedic legend,
+337.68-340.40 (2.72s): surrounded by the company of hundreds of beautiful actresses.</pre></div><div><b>候选</b><pre>316.88-318.24 (1.36s): There he met Hetty Kelly,
+318.40-321.52 (3.12s): an Irish-born dancer who performed at the same location as him.
+321.60-323.12 (1.52s): They met only five times,
+323.20-325.44 (2.24s): with each meeting lasting less than 20 minutes.
+325.60-327.36 (1.76s): Enough for him to madly fall for her.
+327.76-330.32 (2.56s): So, one day he decided to propose to her.
+331.04-331.92 (0.88s): She turned him down.
+332.08-334.56 (2.48s): After a few years, he moved to the United States.
+334.64-337.52 (2.88s): Here the small romantic actor became a comedic legend,
+337.68-340.40 (2.72s): surrounded by the company of hundreds of beautiful actresses.</pre></div></div></details><details data-outcome="better"><summary class="better">R049 · 采猎生活科普 · 变化位置抽查 · 改善</summary><p>buried in the ground 完整，另一版拆开 buried 与 in。</p><small>原文位置 725–995；候选在打乱标识中为 B。</small><pre>s what everyone believed. For centuries, that was the official story. But the proof that it&#x27;s wrong was lying buried in the ground the entire time. And when scientists finally dug it up, it flipped everything upside down.
+And that opens up a mystery. Because you live su</pre><div class="pair"><div><b>现行</b><pre>38.64-40.00 (1.36s): Every second was survival.
+40.08-41.36 (1.28s): That&#x27;s what everyone believed.
+41.84-44.16 (2.32s): For centuries, that was the official story.
+44.24-46.56 (2.32s): But the proof that it&#x27;s wrong was lying buried
+46.56-48.00 (1.44s): in the ground the entire time.
+48.16-49.76 (1.60s): And when scientists finally dug it up,
+50.00-51.68 (1.68s): it flipped everything upside down.
+51.92-53.20 (1.28s): And that opens up a mystery.
+53.28-56.16 (2.88s): Because you live surrounded by machines built to save time.
+56.40-59.44 (3.04s): Washing machines, dishwashers, microwaves, cars,</pre></div><div><b>候选</b><pre>38.64-40.00 (1.36s): Every second was survival.
+40.08-41.36 (1.28s): That&#x27;s what everyone believed.
+41.84-44.16 (2.32s): For centuries, that was the official story.
+44.24-46.24 (2.00s): But the proof that it&#x27;s wrong was lying
+46.24-48.00 (1.76s): buried in the ground the entire time.
+48.16-49.76 (1.60s): And when scientists finally dug it up,
+50.00-51.68 (1.68s): it flipped everything upside down.
+51.92-53.20 (1.28s): And that opens up a mystery.
+53.28-56.16 (2.88s): Because you live surrounded by machines built to save time.
+56.40-59.44 (3.04s): Washing machines, dishwashers, microwaves, cars,</pre></div></div></details><details data-outcome="mixed"><summary class="mixed">R050 · 采猎生活科普 · 变化位置抽查 · 有改善也有退步</summary><p>B 完整分开 Instead 新句，但拆开 faster | than；A 保留比较却拆开 always | will be。</p><small>原文位置 4200–4470；候选在打乱标识中为 A。</small><pre>oday you hunt.
+And real hunting looks nothing like the movies. You never chase the animal because it&#x27;s faster than you, and it always will be. Instead, you follow it at a steady walking pace for hours. Your body can sweat and cool itself while it moves.
+The animal can&#x27;t</pre><div class="pair"><div><b>现行</b><pre>219.36-221.28 (1.92s): everything that needed doing is already done.
+221.52-224.32 (2.80s): 2 days later, the meat runs low, so today you hunt.
+224.72-226.96 (2.24s): And real hunting looks nothing like the movies.
+227.04-228.96 (1.92s): You never chase the animal because it&#x27;s faster
+228.96-230.48 (1.52s): than you, and it always will be.
+230.64-233.84 (3.20s): Instead, you follow it at a steady walking pace for hours.
+233.92-236.40 (2.48s): Your body can sweat and cool itself while it moves.
+236.64-239.84 (3.20s): The animal can&#x27;t, so it keeps sprinting, keeps overheating,
+240.00-242.40 (2.40s): and keeps getting weaker until it finally collapses,</pre></div><div><b>候选</b><pre>219.36-221.28 (1.92s): everything that needed doing is already done.
+221.52-224.32 (2.80s): 2 days later, the meat runs low, so today you hunt.
+224.72-226.96 (2.24s): And real hunting looks nothing like the movies.
+227.04-230.00 (2.96s): You never chase the animal because it&#x27;s faster than you, and it always
+230.00-233.84 (3.84s): will be. Instead, you follow it at a steady walking pace for hours.
+233.92-236.40 (2.48s): Your body can sweat and cool itself while it moves.
+236.64-239.84 (3.20s): The animal can&#x27;t, so it keeps sprinting, keeps overheating,
+240.00-242.40 (2.40s): and keeps getting weaker until it finally collapses,</pre></div></div></details><details data-outcome="better"><summary class="better">R051 · 采猎生活科普 · 变化位置抽查 · 改善</summary><p>条件与主句分开，nobody owes you 保持完整。</p><small>原文位置 8210–8480；候选在打乱标识中为 B。</small><pre> entire safety net. If people like you, they feed you when you have nothing. But if they don&#x27;t like you, then nobody owes you anything, and you starve.
+So, all those lazy afternoon hours of talking and joking and grooming were actually an investment in the only insuranc</pre><div class="pair"><div><b>现行</b><pre>437.28-438.88 (1.60s): The answer is other people.
+439.36-440.96 (1.60s): That&#x27;s the entire safety net.
+441.04-443.92 (2.88s): If people like you, they feed you when you have nothing.
+444.00-446.16 (2.16s): But if they don&#x27;t like you, then nobody owes
+446.16-447.76 (1.60s): you anything, and you starve.
+447.92-452.08 (4.16s): So, all those lazy afternoon hours of talking and joking and grooming
+452.24-455.60 (3.36s): were actually an investment in the only insurance this world has.
+455.76-459.28 (3.52s): The anthropologist James Suzman found that Ju/&#x27;hoansi adults</pre></div><div><b>候选</b><pre>437.28-438.88 (1.60s): The answer is other people.
+439.36-440.96 (1.60s): That&#x27;s the entire safety net.
+441.04-443.92 (2.88s): If people like you, they feed you when you have nothing.
+444.00-445.52 (1.52s): But if they don&#x27;t like you, then
+445.52-447.76 (2.24s): nobody owes you anything, and you starve.
+447.92-452.08 (4.16s): So, all those lazy afternoon hours of talking and joking and grooming
+452.24-455.60 (3.36s): were actually an investment in the only insurance this world has.
+455.76-459.28 (3.52s): The anthropologist James Suzman found that Ju/&#x27;hoansi adults</pre></div></div></details><details data-outcome="better"><summary class="better">R052 · 采猎生活科普 · 变化位置抽查 · 改善</summary><p>collected across decades 独立修饰单位，另一版拆开 collected 与 across。</p><small>原文位置 8919–9189；候选在打乱标识中为 A。</small><pre>tudy that might explain where human culture itself comes from.
+She had recordings of Ju/&#x27;hoansi conversations collected across decades, and she sorted all of them by one simple thing. Was it said during the day or at night? The daytime talk turned out to be practical. P</pre><div class="pair"><div><b>现行</b><pre>475.36-478.88 (3.52s): In 2014, an anthropologist named Polly Wiessner published
+478.88-481.68 (2.80s): a study that might explain where human culture itself comes from.
+481.84-484.48 (2.64s): She had recordings of Ju/&#x27;hoansi conversations collected
+484.48-487.60 (3.12s): across decades, and she sorted all of them by one simple thing.
+487.76-489.84 (2.08s): Was it said during the day or at night?
+490.32-492.40 (2.08s): The daytime talk turned out to be practical.
+492.56-494.72 (2.16s): People discussed where the animal tracks were,
+494.88-498.32 (3.44s): which plants were ready to gather, and who wasn&#x27;t sharing fairly.</pre></div><div><b>候选</b><pre>475.36-478.88 (3.52s): In 2014, an anthropologist named Polly Wiessner published
+478.88-481.68 (2.80s): a study that might explain where human culture itself comes from.
+481.84-484.00 (2.16s): She had recordings of Ju/&#x27;hoansi conversations
+484.00-485.36 (1.36s): collected across decades,
+485.44-487.60 (2.16s): and she sorted all of them by one simple thing.
+487.76-489.84 (2.08s): Was it said during the day or at night?
+490.32-492.40 (2.08s): The daytime talk turned out to be practical.
+492.56-494.72 (2.16s): People discussed where the animal tracks were,
+494.88-498.32 (3.44s): which plants were ready to gather, and who wasn&#x27;t sharing fairly.</pre></div></div></details><details data-outcome="better"><summary class="better">R053 · 采猎生活科普 · 变化位置抽查 · 改善</summary><p>more than 比较结构完整。</p><small>原文位置 9717–9987；候选在打乱标识中为 B。</small><pre>mind. Those stories only show up when your stomach is full and your body is safe. So, the fire was doing more than cooking food and keeping predators away. It created the first hours in human history where the mind was completely free.
+And Weisner argued that this is ex</pre><div class="pair"><div><b>现行</b><pre>517.52-520.08 (2.56s): Gods and spirits, the past and the future,
+520.08-522.40 (2.32s): none of that comes out of a scared, hungry mind.
+522.80-524.16 (1.36s): Those stories only show up
+524.16-526.40 (2.24s): when your stomach is full and your body is safe.
+526.56-528.16 (1.60s): So, the fire was doing more
+528.16-530.32 (2.16s): than cooking food and keeping predators away.
+530.40-532.40 (2.00s): It created the first hours in human history
+532.40-534.00 (1.60s): where the mind was completely free.
+534.16-537.36 (3.20s): And Weisner argued that this is exactly where culture was born,
+537.52-540.72 (3.20s): not in the middle of the work, but in the quiet hours after it.</pre></div><div><b>候选</b><pre>517.52-520.08 (2.56s): Gods and spirits, the past and the future,
+520.08-522.40 (2.32s): none of that comes out of a scared, hungry mind.
+522.80-524.16 (1.36s): Those stories only show up
+524.16-526.40 (2.24s): when your stomach is full and your body is safe.
+526.56-528.96 (2.40s): So, the fire was doing more than cooking food
+528.96-530.32 (1.36s): and keeping predators away.
+530.40-532.40 (2.00s): It created the first hours in human history
+532.40-534.00 (1.60s): where the mind was completely free.
+534.16-537.36 (3.20s): And Weisner argued that this is exactly where culture was born,
+537.52-540.72 (3.20s): not in the middle of the work, but in the quiet hours after it.</pre></div></div></details><details data-outcome="better"><summary class="better">R054 · 采猎生活科普 · 变化位置抽查 · 改善</summary><p>句子按主语、谓语划分，normal for 的关系完整。</p><small>原文位置 10408–10678；候选在打乱标识中为 B。</small><pre>arkness, thinking or talking quietly until sleep came back for another 4 hours.
+That quiet hour in the middle was completely normal for thousands of generations. Today, you wake up at 2:00 a.m. and call it insomnia. Your body might just be doing the oldest thing it know</pre><div class="pair"><div><b>现行</b><pre>554.08-556.48 (2.40s): then woke up for an hour or two in the middle of the night.
+556.64-558.48 (1.84s): And they stayed calm in that darkness,
+558.64-562.80 (4.16s): thinking or talking quietly until sleep came back for another 4 hours.
+563.04-565.60 (2.56s): That quiet hour in the middle was completely normal
+565.60-567.20 (1.60s): for thousands of generations.
+567.28-570.56 (3.28s): Today, you wake up at 2:00 a.m. and call it insomnia.
+570.64-573.28 (2.64s): Your body might just be doing the oldest thing it knows.
+573.36-575.20 (1.84s): So, now you&#x27;ve seen the whole picture.</pre></div><div><b>候选</b><pre>554.08-556.48 (2.40s): then woke up for an hour or two in the middle of the night.
+556.64-558.48 (1.84s): And they stayed calm in that darkness,
+558.64-562.80 (4.16s): thinking or talking quietly until sleep came back for another 4 hours.
+563.04-564.56 (1.52s): That quiet hour in the middle
+564.56-567.20 (2.64s): was completely normal for thousands of generations.
+567.28-570.56 (3.28s): Today, you wake up at 2:00 a.m. and call it insomnia.
+570.64-573.28 (2.64s): Your body might just be doing the oldest thing it knows.
+573.36-575.20 (1.84s): So, now you&#x27;ve seen the whole picture.</pre></div></div></details><details data-outcome="better"><summary class="better">R055 · 养老院家庭叙事 · 变化位置抽查 · 改善</summary><p>does not start in 与 riding with me 都保留完整。</p><small>原文位置 1910–2180；候选在打乱标识中为 B。</small><pre>give you something here, because nobody told me this and I wish they had. The deciding about where you end up doesn&#x27;t start in some meeting with a social worker. It starts in the ambulance. I&#x27;m flat on my back, strapped to a board, and the young man riding with me has a</pre><div class="pair"><div><b>现行</b><pre>113.60-117.36 (3.76s): Didn&#x27;t know what to do, so he did the right thing and called 911.
+117.68-119.44 (1.76s): Now I want to give you something here,
+119.52-122.40 (2.88s): because nobody told me this and I wish they had.
+123.20-125.84 (2.64s): The deciding about where you end up doesn&#x27;t start
+125.84-127.68 (1.84s): in some meeting with a social worker.
+128.00-129.68 (1.68s): It starts in the ambulance.
+130.40-134.64 (4.24s): I&#x27;m flat on my back, strapped to a board, and the young man riding with
+134.64-138.80 (4.16s): me has a clipboard, and he says, &quot;Who&#x27;s your emergency contact, sir?
+139.12-141.60 (2.48s): And do you have any thoughts about where you&#x27;d be discharged</pre></div><div><b>候选</b><pre>113.60-117.36 (3.76s): Didn&#x27;t know what to do, so he did the right thing and called 911.
+117.68-119.44 (1.76s): Now I want to give you something here,
+119.52-122.40 (2.88s): because nobody told me this and I wish they had.
+123.20-125.04 (1.84s): The deciding about where you end up
+125.12-127.68 (2.56s): doesn&#x27;t start in some meeting with a social worker.
+128.00-129.68 (1.68s): It starts in the ambulance.
+130.40-134.88 (4.48s): I&#x27;m flat on my back, strapped to a board, and the young man riding with me
+134.96-138.80 (3.84s): has a clipboard, and he says, &quot;Who&#x27;s your emergency contact, sir?
+139.12-141.60 (2.48s): And do you have any thoughts about where you&#x27;d be discharged</pre></div></div></details><details data-outcome="better"><summary class="better">R056 · 养老院家庭叙事 · 变化位置抽查 · 改善</summary><p>put them in a clear plastic bag 完整，后续 written 修饰可分开。</p><small>原文位置 3047–3317；候选在打乱标识中为 B。</small><pre>d.&quot; That&#x27;s about what a man can say from Texas.
+The morning they moved me, they put a plastic wristband on me with my name and a bar code, and an aide took my boots and my belt and put them in a clear plastic bag with HOLLIS written on it in black marker. She set the ba</pre><div class="pair"><div><b>现行</b><pre>181.20-183.84 (2.64s): He called from the parking lot at his kids&#x27; soccer game
+183.84-186.24 (2.40s): and said, &quot;Dad, whatever you need.&quot;
+186.64-188.96 (2.32s): That&#x27;s about what a man can say from Texas.
+189.44-193.44 (4.00s): The morning they moved me, they put a plastic wristband on me with my name
+193.52-197.60 (4.08s): and a bar code, and an aide took my boots and my belt and put them
+197.60-201.44 (3.84s): in a clear plastic bag with HOLLIS written on it in black marker.
+202.00-204.48 (2.48s): She set the bag on the high shelf of the closet.
+204.88-206.88 (2.00s): Then she handed me a pair of socks.</pre></div><div><b>候选</b><pre>181.20-183.84 (2.64s): He called from the parking lot at his kids&#x27; soccer game
+183.84-186.24 (2.40s): and said, &quot;Dad, whatever you need.&quot;
+186.64-188.96 (2.32s): That&#x27;s about what a man can say from Texas.
+189.44-192.64 (3.20s): The morning they moved me, they put a plastic wristband on me
+192.72-196.24 (3.52s): with my name and a bar code, and an aide took my boots
+196.24-199.76 (3.52s): and my belt and put them in a clear plastic bag with HOLLIS
+199.76-201.44 (1.68s): written on it in black marker.
+202.00-204.48 (2.48s): She set the bag on the high shelf of the closet.
+204.88-206.88 (2.00s): Then she handed me a pair of socks.</pre></div></div></details><details data-outcome="better"><summary class="better">R057 · 养老院家庭叙事 · 变化位置抽查 · 改善</summary><p>you are in 保持完整；另一版将 in 独立留到下条。</p><small>原文位置 5703–5973；候选在打乱标识中为 B。</small><pre>ent, and that would be private pay until it wasn&#x27;t. I asked what private pay came to. She said, &quot;For the room you&#x27;re in, it&#x27;s nine thousand four hundred a month, Mr. Hollis.&quot; I want you to hear that number the way I heard it. Nine thousand four hundred dollars a month. </pre><div class="pair"><div><b>现行</b><pre>346.24-349.68 (3.44s): and somebody checking on me, or I could stay on as what she called
+349.68-353.44 (3.76s): a long-term resident, and that would be private pay until it wasn&#x27;t.
+353.76-357.76 (4.00s): I asked what private pay came to. She said, &quot;For the room you&#x27;re
+357.76-361.12 (3.36s): in, it&#x27;s nine thousand four hundred a month, Mr. Hollis.&quot;
+361.52-363.76 (2.24s): I want you to hear that number the way I heard it.
+364.08-366.32 (2.24s): Nine thousand four hundred dollars a month.
+366.56-370.08 (3.52s): And that was the semi-private, with Walt and his Broncos flag.</pre></div><div><b>候选</b><pre>346.24-349.68 (3.44s): and somebody checking on me, or I could stay on as what she called
+349.68-353.44 (3.76s): a long-term resident, and that would be private pay until it wasn&#x27;t.
+353.76-357.60 (3.84s): I asked what private pay came to. She said, &quot;For the room
+357.60-361.12 (3.52s): you&#x27;re in, it&#x27;s nine thousand four hundred a month, Mr. Hollis.&quot;
+361.52-363.76 (2.24s): I want you to hear that number the way I heard it.
+364.08-366.32 (2.24s): Nine thousand four hundred dollars a month.
+366.56-370.08 (3.52s): And that was the semi-private, with Walt and his Broncos flag.</pre></div></div></details><details data-outcome="better"><summary class="better">R058 · 养老院家庭叙事 · 变化位置抽查 · 改善</summary><p>came out with the papers 和 swings over the bed 完整，在逗号后分开。</p><small>原文位置 12441–12711；候选在打乱标识中为 B。</small><pre>
+
+&quot;Sat there. I paid the taxes on it the first year from in here. Then the money got thin, and Kevin came out with the papers, and I signed them right there.&quot; He tapped the tray table that swings over the bed, the one they put your lunch on. &quot;Right there. Sold it to a y</pre><div class="pair"><div><b>现行</b><pre>761.48-764.68 (3.20s): &quot;You&#x27;d be surprised how many months a man can see how it goes.&quot;
+765.08-766.92 (1.84s): &quot;What about your house?&quot; I asked.
+767.80-768.60 (0.80s): &quot;Sat there.
+768.76-771.48 (2.72s): I paid the taxes on it the first year from in here.
+771.96-774.36 (2.40s): Then the money got thin, and Kevin came out
+774.36-776.52 (2.16s): with the papers, and I signed them right there.&quot;
+776.76-778.68 (1.92s): He tapped the tray table that swings
+778.68-781.24 (2.56s): over the bed, the one they put your lunch on.
+781.48-784.04 (2.56s): &quot;Right there. Sold it to a young couple.
+784.28-785.72 (1.44s): I hear they painted it gray.&quot;</pre></div><div><b>候选</b><pre>761.48-764.68 (3.20s): &quot;You&#x27;d be surprised how many months a man can see how it goes.&quot;
+765.08-766.92 (1.84s): &quot;What about your house?&quot; I asked.
+767.80-768.60 (0.80s): &quot;Sat there.
+768.76-771.48 (2.72s): I paid the taxes on it the first year from in here.
+771.96-775.08 (3.12s): Then the money got thin, and Kevin came out with the papers,
+775.16-776.52 (1.36s): and I signed them right there.&quot;
+776.76-779.48 (2.72s): He tapped the tray table that swings over the bed,
+779.72-781.24 (1.52s): the one they put your lunch on.
+781.48-784.04 (2.56s): &quot;Right there. Sold it to a young couple.
+784.28-785.72 (1.44s): I hear they painted it gray.&quot;</pre></div></div></details><details data-outcome="better"><summary class="better">R059 · 养老院家庭叙事 · 变化位置抽查 · 改善</summary><p>sat up in his bed 完整，后接并列动作。</p><small>原文位置 22026–22296；候选在打乱标识中为 B。</small><pre>out forty minutes, because I couldn&#x27;t bend the way I used to and I wouldn&#x27;t let anybody help, and Walt sat up in his bed and watched the whole thing without saying a word. When I finally got the second one laced, I put both feet flat on the floor and just sat there.
+
+&quot;H</pre><div class="pair"><div><b>现行</b><pre>1358.50-1362.58 (4.08s): I sat on the edge of the bed and got the boots out, and I put them on myself.
+1362.98-1366.58 (3.60s): It took me about forty minutes, because I couldn&#x27;t bend the way I used
+1366.58-1369.94 (3.36s): to and I wouldn&#x27;t let anybody help, and Walt sat up
+1369.94-1372.98 (3.04s): in his bed and watched the whole thing without saying a word.
+1373.54-1375.54 (2.00s): When I finally got the second one laced,
+1375.78-1378.90 (3.12s): I put both feet flat on the floor and just sat there.
+1379.14-1380.10 (0.96s): &quot;How do they feel?&quot;
+1380.58-1381.46 (0.88s): Walt asked.</pre></div><div><b>候选</b><pre>1358.50-1362.58 (4.08s): I sat on the edge of the bed and got the boots out, and I put them on myself.
+1362.98-1366.58 (3.60s): It took me about forty minutes, because I couldn&#x27;t bend the way I used
+1366.58-1370.50 (3.92s): to and I wouldn&#x27;t let anybody help, and Walt sat up in his bed
+1370.50-1372.98 (2.48s): and watched the whole thing without saying a word.
+1373.54-1375.54 (2.00s): When I finally got the second one laced,
+1375.78-1378.90 (3.12s): I put both feet flat on the floor and just sat there.
+1379.14-1380.10 (0.96s): &quot;How do they feel?&quot;
+1380.58-1381.46 (0.88s): Walt asked.</pre></div></div></details><details data-outcome="better"><summary class="better">R060 · 养老院家庭叙事 · 变化位置抽查 · 改善</summary><p>地址枚举完整、stop at the pharmacy 后在 because 前切分。</p><small>原文位置 24457–24727；候选在打乱标识中为 B。</small><pre>bout where you&#x27;d be discharged to?
+Eleven weeks ago, I didn&#x27;t know. This time I gave her the address on Main, and the apartment number, and I told her to stop at the pharmacy first because I wanted to buy my own calendar.
+
+That Thursday I had Carla&#x27;s husband drive me ov</pre><div class="pair"><div><b>现行</b><pre>1503.78-1507.06 (3.28s): And I thought about the young man in the ambulance with his clipboard.
+1507.38-1509.38 (2.00s): Any thoughts about where you&#x27;d be discharged
+1509.46-1512.42 (2.96s): to? Eleven weeks ago, I didn&#x27;t know.
+1512.90-1514.98 (2.08s): This time I gave her the address on Main,
+1515.14-1517.78 (2.64s): and the apartment number, and I told her to stop
+1517.78-1521.06 (3.28s): at the pharmacy first because I wanted to buy my own calendar.
+1521.70-1525.22 (3.52s): That Thursday I had Carla&#x27;s husband drive me over, because
+1525.22-1528.58 (3.36s): I wasn&#x27;t cleared to drive yet and I wasn&#x27;t going to argue that one.</pre></div><div><b>候选</b><pre>1503.78-1507.06 (3.28s): And I thought about the young man in the ambulance with his clipboard.
+1507.38-1509.38 (2.00s): Any thoughts about where you&#x27;d be discharged
+1509.46-1512.42 (2.96s): to? Eleven weeks ago, I didn&#x27;t know.
+1512.90-1516.34 (3.44s): This time I gave her the address on Main, and the apartment number,
+1516.66-1518.98 (2.32s): and I told her to stop at the pharmacy first
+1518.98-1521.06 (2.08s): because I wanted to buy my own calendar.
+1521.70-1525.22 (3.52s): That Thursday I had Carla&#x27;s husband drive me over, because
+1525.22-1528.58 (3.36s): I wasn&#x27;t cleared to drive yet and I wasn&#x27;t going to argue that one.</pre></div></div></details><details data-outcome="better"><summary class="better">R061 · 退休金与朋友叙事 · 变化位置抽查 · 改善</summary><p>Everybody goes home 是完整短句；looks at 后续单位完整。</p><small>原文位置 7915–8185；候选在打乱标识中为 B。</small><pre> You say, &quot;Let me look at it at home, and I&#x27;ll call you Sunday.&quot; That&#x27;s the whole speech.
+Everybody goes home and looks at their own checkbook at their own kitchen table, and on Sunday you say yes or you say no. Nobody has to explain a no, and nobody ever has to hear a </pre><div class="pair"><div><b>现行</b><pre>473.53-476.25 (2.72s): When money comes up because you&#x27;re splitting something,
+476.49-480.09 (3.60s): talk about the price of the thing, never the size of your check.
+480.33-483.69 (3.36s): You say, &quot;Let me look at it at home, and I&#x27;ll call you Sunday.&quot;
+484.01-485.21 (1.20s): That&#x27;s the whole speech.
+485.69-487.37 (1.68s): Everybody goes home and looks
+487.37-489.93 (2.56s): at their own checkbook at their own kitchen table,
+490.25-493.05 (2.80s): and on Sunday you say yes or you say no.
+493.45-497.29 (3.84s): Nobody has to explain a no, and nobody ever has to hear a number.
+497.77-500.25 (2.48s): If I&#x27;d said that one sentence that Thursday,</pre></div><div><b>候选</b><pre>473.53-476.25 (2.72s): When money comes up because you&#x27;re splitting something,
+476.49-480.09 (3.60s): talk about the price of the thing, never the size of your check.
+480.33-483.69 (3.36s): You say, &quot;Let me look at it at home, and I&#x27;ll call you Sunday.&quot;
+484.01-485.21 (1.20s): That&#x27;s the whole speech.
+485.69-486.89 (1.20s): Everybody goes home
+486.97-489.93 (2.96s): and looks at their own checkbook at their own kitchen table,
+490.25-493.05 (2.80s): and on Sunday you say yes or you say no.
+493.45-497.29 (3.84s): Nobody has to explain a no, and nobody ever has to hear a number.
+497.77-500.25 (2.48s): If I&#x27;d said that one sentence that Thursday,</pre></div></div></details><details data-outcome="better"><summary class="better">R062 · 退休金与朋友叙事 · 变化位置抽查 · 改善</summary><p>完整句后接 and 的独立动作；另一版 in my head 与后续动作混合。</p><small>原文位置 8423–8693；候选在打乱标识中为 A。</small><pre>been the end of it.
+
+The next morning I was up before six.
+I&#x27;d been lying awake half the night being generous in my head, and I wanted to get it done. I called the rental lady down in Florida as soon as her office opened, and she was so tickled you&#x27;d have thought she wa</pre><div class="pair"><div><b>现行</b><pre>504.09-507.45 (3.36s): he&#x27;d have called to say February was a bad month for his back.
+507.93-511.13 (3.20s): We&#x27;d have kidded him about his back, and that would&#x27;ve been the end of it.
+511.69-513.93 (2.24s): The next morning I was up before six.
+514.41-517.13 (2.72s): I&#x27;d been lying awake half the night being generous
+517.13-519.53 (2.40s): in my head, and I wanted to get it done.
+519.77-523.61 (3.84s): I called the rental lady down in Florida as soon as her office opened,
+523.93-526.89 (2.96s): and she was so tickled you&#x27;d have thought she was coming with us.
+527.29-530.97 (3.68s): She told me the lanai faced west, so we&#x27;d get the sunsets.</pre></div><div><b>候选</b><pre>504.09-507.45 (3.36s): he&#x27;d have called to say February was a bad month for his back.
+507.93-511.13 (3.20s): We&#x27;d have kidded him about his back, and that would&#x27;ve been the end of it.
+511.69-513.93 (2.24s): The next morning I was up before six.
+514.41-517.77 (3.36s): I&#x27;d been lying awake half the night being generous in my head,
+518.17-519.53 (1.36s): and I wanted to get it done.
+519.77-523.61 (3.84s): I called the rental lady down in Florida as soon as her office opened,
+523.93-526.89 (2.96s): and she was so tickled you&#x27;d have thought she was coming with us.
+527.29-530.97 (3.68s): She told me the lanai faced west, so we&#x27;d get the sunsets.</pre></div></div></details><details data-outcome="worse"><summary class="worse">R063 · 退休金与朋友叙事 · 变化位置抽查 · 退步</summary><p>在完整句结束后另起 Then，去除了句尾的时间状语跨句混合。</p><small>原文位置 13142–13412；候选在打乱标识中为 A。</small><pre>lse back into the business, and plenty of men who had their own trucks did it that way.
+Nobody at thirty-five is thinking about what that does to a Social Security check at sixty-seven. Then he sold out in a bad year. Walt could be a stubborn so-and-so, and I&#x27;d have sai</pre><div class="pair"><div><b>现行</b><pre>790.17-793.05 (2.88s): his accountant told him to keep what he reported as low
+793.05-796.81 (3.76s): as he legally could and put everything else back into the business,
+797.05-800.17 (3.12s): and plenty of men who had their own trucks did it that way.
+800.65-803.61 (2.96s): Nobody at thirty-five is thinking about what that does
+803.69-806.33 (2.64s): to a Social Security check at sixty-seven.
+806.89-808.73 (1.84s): Then he sold out in a bad year.
+809.21-811.29 (2.08s): Walt could be a stubborn so-and-so,
+811.53-815.29 (3.76s): and I&#x27;d have said so to his face, but he was never a fool with money.
+815.61-819.53 (3.92s): He did what men in his line of work did, and the bill came later.</pre></div><div><b>候选</b><pre>790.17-793.05 (2.88s): his accountant told him to keep what he reported as low
+793.05-796.81 (3.76s): as he legally could and put everything else back into the business,
+797.05-800.17 (3.12s): and plenty of men who had their own trucks did it that way.
+800.65-801.93 (1.28s): Nobody at thirty-five
+801.93-805.21 (3.28s): is thinking about what that does to a Social Security check
+805.21-808.73 (3.52s): at sixty-seven. Then he sold out in a bad year.
+809.21-811.29 (2.08s): Walt could be a stubborn so-and-so,
+811.53-815.29 (3.76s): and I&#x27;d have said so to his face, but he was never a fool with money.
+815.61-819.53 (3.92s): He did what men in his line of work did, and the bill came later.</pre></div></div></details><details data-outcome="better"><summary class="better">R064 · 退休金与朋友叙事 · 变化位置抽查 · 改善</summary><p>条件从句完整，另一版把 in my head 及 been at 分开。</p><small>原文位置 13668–13938；候选在打乱标识中为 A。</small><pre>inda would ask what I was chewing on, and I&#x27;d say nothing and roll over.
+I figured as long as I kept all that in my own head, it couldn&#x27;t hurt anybody.
+
+Tuesdays I have coffee with some retired fellows at the diner out on Route 4. There are six of us in the corner booth</pre><div class="pair"><div><b>现行</b><pre>825.61-827.53 (1.92s): Joanne&#x27;s car was making a noise.
+827.77-831.85 (4.08s): Linda would ask what I was chewing on, and I&#x27;d say nothing and roll over.
+832.41-834.33 (1.92s): I figured as long as I kept all that
+834.33-836.49 (2.16s): in my own head, it couldn&#x27;t hurt anybody.
+836.89-839.61 (2.72s): Tuesdays I have coffee with some retired fellows
+839.61-841.29 (1.68s): at the diner out on Route 4.
+841.77-844.49 (2.72s): There are six of us in the corner booth, and we&#x27;ve been
+844.49-848.89 (4.40s): at it so long the waitress just brings us our own pot and lets us pour.</pre></div><div><b>候选</b><pre>825.61-827.53 (1.92s): Joanne&#x27;s car was making a noise.
+827.77-831.85 (4.08s): Linda would ask what I was chewing on, and I&#x27;d say nothing and roll over.
+832.41-835.13 (2.72s): I figured as long as I kept all that in my own head,
+835.21-836.49 (1.28s): it couldn&#x27;t hurt anybody.
+836.89-839.61 (2.72s): Tuesdays I have coffee with some retired fellows
+839.61-841.29 (1.68s): at the diner out on Route 4.
+841.77-845.53 (3.76s): There are six of us in the corner booth, and we&#x27;ve been at it so long
+845.53-848.89 (3.36s): the waitress just brings us our own pot and lets us pour.</pre></div></div></details><details data-outcome="better"><summary class="better">R065 · 退休金与朋友叙事 · 变化位置抽查 · 改善</summary><p>各个 Not 的枚举单位分别完整呈现。</p><small>原文位置 18025–18295；候选在打乱标识中为 B。</small><pre> of his driveway.
+
+That&#x27;s the third thing. Never tell anybody else&#x27;s number.
+Not at coffee, not to your kids, not on the phone to your sister in Arizona, and not when you&#x27;re worried and you mean well. Especially not then, because worried is exactly when you lean in and </pre><div class="pair"><div><b>现行</b><pre>1087.77-1089.69 (1.92s): The garage door came down behind me
+1089.69-1091.85 (2.16s): before I got to the end of his driveway.
+1092.17-1093.29 (1.12s): That&#x27;s the third thing.
+1093.61-1095.61 (2.00s): Never tell anybody else&#x27;s number.
+1095.85-1098.97 (3.12s): Not at coffee, not to your kids, not on the phone
+1099.05-1103.05 (4.00s): to your sister in Arizona, and not when you&#x27;re worried and you mean well.
+1103.13-1106.09 (2.96s): Especially not then, because worried is exactly
+1106.09-1108.09 (2.00s): when you lean in and lower your voice.
+1108.41-1110.73 (2.32s): Maybe you&#x27;ve got a Dennis at your table, too.</pre></div><div><b>候选</b><pre>1087.77-1089.69 (1.92s): The garage door came down behind me
+1089.69-1091.85 (2.16s): before I got to the end of his driveway.
+1092.17-1093.29 (1.12s): That&#x27;s the third thing.
+1093.61-1095.61 (2.00s): Never tell anybody else&#x27;s number.
+1095.85-1098.01 (2.16s): Not at coffee, not to your kids,
+1098.25-1100.49 (2.24s): not on the phone to your sister in Arizona,
+1100.89-1103.05 (2.16s): and not when you&#x27;re worried and you mean well.
+1103.13-1106.09 (2.96s): Especially not then, because worried is exactly
+1106.09-1108.09 (2.00s): when you lean in and lower your voice.
+1108.41-1110.73 (2.32s): Maybe you&#x27;ve got a Dennis at your table, too.</pre></div></div></details><details data-outcome="better"><summary class="better">R066 · 退休金与朋友叙事 · 变化位置抽查 · 改善</summary><p>I feel sick about it. I do. 两个完整句组合，If 另起更自然。</p><small>原文位置 20939–21209；候选在打乱标识中为 B。</small><pre> And I get more than twice what you get, for walking around backyards with a clipboard. I feel sick about it.
+I do. If there&#x27;s ever anything you need, anything at all, you just say the word.&quot;
+
+His shoulders came right back up. He looked at me a long time, and his face d</pre><div class="pair"><div><b>现行</b><pre>1265.05-1267.21 (2.16s): You worked twice as hard as I ever did.
+1267.53-1271.85 (4.32s): Nights, weekends, crawling around under people&#x27;s houses in February.
+1272.01-1273.77 (1.76s): And I get more than twice what you get,
+1273.93-1276.33 (2.40s): for walking around backyards with a clipboard.
+1276.89-1278.01 (1.12s): I feel sick about it.
+1278.41-1280.73 (2.32s): I do. If there&#x27;s ever anything you need,
+1281.05-1283.21 (2.16s): anything at all, you just say the word.&quot;
+1283.93-1285.77 (1.84s): His shoulders came right back up.
+1286.09-1289.69 (3.60s): He looked at me a long time, and his face didn&#x27;t do anything at all,
+1289.85-1291.37 (1.52s): which was worse than if it had.</pre></div><div><b>候选</b><pre>1265.05-1267.21 (2.16s): You worked twice as hard as I ever did.
+1267.53-1271.85 (4.32s): Nights, weekends, crawling around under people&#x27;s houses in February.
+1272.01-1273.77 (1.76s): And I get more than twice what you get,
+1273.93-1276.33 (2.40s): for walking around backyards with a clipboard.
+1276.89-1278.97 (2.08s): I feel sick about it. I do.
+1279.29-1280.73 (1.44s): If there&#x27;s ever anything you need,
+1281.05-1283.21 (2.16s): anything at all, you just say the word.&quot;
+1283.93-1285.77 (1.84s): His shoulders came right back up.
+1286.09-1289.69 (3.60s): He looked at me a long time, and his face didn&#x27;t do anything at all,
+1289.85-1291.37 (1.52s): which was worse than if it had.</pre></div></div></details><details data-outcome="better"><summary class="better">R067 · 史前音乐与游戏科普 · 变化位置抽查 · 改善</summary><p>lives under 的状态单位完整。</p><small>原文位置 4820–5090；候选在打乱标识中为 A。</small><pre>pears? Because music wasn&#x27;t a luxury; it was a social superglue. When a small band of twenty to thirty people lives under constant survival stress, internal friction is fatal. If two hunters hold a grudge, the hunt fails. If people feel isolated and hopeless, the tribe </pre><div class="pair"><div><b>现行</b><pre>254.32-257.60 (3.28s): Why would evolution allow early humans to waste precious daylight
+257.60-260.88 (3.28s): blowing into bird bones instead of sharpening hunting spears?
+261.04-264.16 (3.12s): Because music wasn&#x27;t a luxury; it was a social superglue.
+264.32-266.72 (2.40s): When a small band of twenty to thirty people lives
+266.72-270.16 (3.44s): under constant survival stress, internal friction is fatal.
+270.56-273.12 (2.56s): If two hunters hold a grudge, the hunt fails.
+273.28-276.56 (3.28s): If people feel isolated and hopeless, the tribe dissolves.
+276.80-279.76 (2.96s): Singing, drumming, and playing music together creates</pre></div><div><b>候选</b><pre>254.32-257.60 (3.28s): Why would evolution allow early humans to waste precious daylight
+257.60-260.88 (3.28s): blowing into bird bones instead of sharpening hunting spears?
+261.04-264.16 (3.12s): Because music wasn&#x27;t a luxury; it was a social superglue.
+264.32-266.48 (2.16s): When a small band of twenty to thirty people
+266.48-270.16 (3.68s): lives under constant survival stress, internal friction is fatal.
+270.56-273.12 (2.56s): If two hunters hold a grudge, the hunt fails.
+273.28-276.56 (3.28s): If people feel isolated and hopeless, the tribe dissolves.
+276.80-279.76 (2.96s): Singing, drumming, and playing music together creates</pre></div></div></details><details data-outcome="better"><summary class="better">R068 · 史前音乐与游戏科普 · 变化位置抽查 · 改善</summary><p>blow off steam 不再拆开。</p><small>原文位置 7742–8012；候选在打乱标识中为 B。</small><pre>lassroom for motor skills and emotional self-control. In human camps, a wrestling match allowed two young men to blow off steam, test physical prowess, and settle rivalries without anyone actually driving a spear through another person&#x27;s chest. It turned dangerous aggre</pre><div class="pair"><div><b>现行</b><pre>422.16-425.36 (3.20s): chimps spar, otter pups tackle each other into the water.
+425.44-428.64 (3.20s): Play is nature&#x27;s universal classroom for motor skills
+428.72-430.00 (1.28s): and emotional self-control.
+430.40-433.76 (3.36s): In human camps, a wrestling match allowed two young men to blow off
+433.76-436.96 (3.20s): steam, test physical prowess, and settle rivalries without
+437.04-440.00 (2.96s): anyone actually driving a spear through another person&#x27;s chest.
+440.16-442.48 (2.32s): It turned dangerous aggression into harmless fun.
+443.04-444.80 (1.76s): When the sun slipped below the horizon,</pre></div><div><b>候选</b><pre>422.16-425.36 (3.20s): chimps spar, otter pups tackle each other into the water.
+425.44-428.64 (3.20s): Play is nature&#x27;s universal classroom for motor skills
+428.72-430.00 (1.28s): and emotional self-control.
+430.40-433.20 (2.80s): In human camps, a wrestling match allowed two young men
+433.20-435.52 (2.32s): to blow off steam, test physical prowess,
+435.68-438.24 (2.56s): and settle rivalries without anyone actually driving
+438.24-440.00 (1.76s): a spear through another person&#x27;s chest.
+440.16-442.48 (2.32s): It turned dangerous aggression into harmless fun.
+443.04-444.80 (1.76s): When the sun slipped below the horizon,</pre></div></div></details><details data-outcome="better"><summary class="better">R069 · 史前音乐与游戏科普 · 变化位置抽查 · 改善</summary><p>spent years 后切分，living with 的单位完整；另一版 living | with 被拆开。</p><small>原文位置 8149–8419；候选在打乱标识中为 A。</small><pre>y tracked tracks, gathered tubers, chipped flint, and tanned hides.
+Anthropologist Polly Wiessner spent years living with the Ju/&#x27;hoansi hunter-gatherers and painstakingly recorded their daytime conversations versus their nighttime conversations. Her findings were strik</pre><div class="pair"><div><b>现行</b><pre>446.96-448.48 (1.52s): In the daylight, people worked.
+448.56-450.64 (2.08s): They tracked tracks, gathered tubers,
+450.72-452.32 (1.60s): chipped flint, and tanned hides.
+452.56-455.20 (2.64s): Anthropologist Polly Wiessner spent years living
+455.20-458.40 (3.20s): with the Ju/&#x27;hoansi hunter-gatherers and painstakingly recorded
+458.40-461.84 (3.44s): their daytime conversations versus their nighttime conversations.
+462.24-466.40 (4.16s): Her findings were striking: during the day, 75% of conversations
+466.48-469.28 (2.80s): revolved around practical matters, economic chores,</pre></div><div><b>候选</b><pre>446.96-448.48 (1.52s): In the daylight, people worked.
+448.56-450.64 (2.08s): They tracked tracks, gathered tubers,
+450.72-452.32 (1.60s): chipped flint, and tanned hides.
+452.56-454.88 (2.32s): Anthropologist Polly Wiessner spent years
+454.88-456.88 (2.00s): living with the Ju/&#x27;hoansi hunter-gatherers
+457.04-459.84 (2.80s): and painstakingly recorded their daytime conversations
+460.00-461.84 (1.84s): versus their nighttime conversations.
+462.24-466.40 (4.16s): Her findings were striking: during the day, 75% of conversations
+466.48-469.28 (2.80s): revolved around practical matters, economic chores,</pre></div></div></details><details data-outcome="mixed"><summary class="mixed">R070 · 史前音乐与游戏科普 · 变化位置抽查 · 有改善也有退步</summary><p>两版都把新句的一部分接在旧句结尾，没有明确净改善。</p><small>原文位置 9882–10152；候选在打乱标识中为 A。</small><pre>er, you have to crawl deep underground. Tens of thousands of years ago, Upper Paleolithic humans climbed down into caves like Chauvet, Lascaux, and Altamira. They didn&#x27;t paint in the front of the cave where sunlight reached and families slept.
+They crawled hundreds of m</pre><div class="pair"><div><b>现行</b><pre>539.20-540.64 (1.44s): If you want to witness the pure,
+540.72-543.20 (2.48s): unadulterated human pursuit of aesthetic wonder,
+543.28-544.88 (1.60s): you have to crawl deep underground.
+544.96-548.72 (3.76s): Tens of thousands of years ago, Upper Paleolithic humans climbed down
+548.72-552.80 (4.08s): into caves like Chauvet, Lascaux, and Altamira. They didn&#x27;t paint
+552.80-555.68 (2.88s): in the front of the cave where sunlight reached and families slept.
+555.84-558.64 (2.80s): They crawled hundreds of meters through narrow, pitch-black,
+558.64-561.84 (3.20s): suffocating fissures to reach cathedral-like underground chambers.</pre></div><div><b>候选</b><pre>539.20-540.64 (1.44s): If you want to witness the pure,
+540.72-543.20 (2.48s): unadulterated human pursuit of aesthetic wonder,
+543.28-544.88 (1.60s): you have to crawl deep underground.
+544.96-548.16 (3.20s): Tens of thousands of years ago, Upper Paleolithic humans
+548.16-552.24 (4.08s): climbed down into caves like Chauvet, Lascaux, and Altamira. They
+552.24-553.76 (1.52s): didn&#x27;t paint in the front of the cave
+553.76-555.68 (1.92s): where sunlight reached and families slept.
+555.84-558.64 (2.80s): They crawled hundreds of meters through narrow, pitch-black,
+558.64-561.84 (3.20s): suffocating fissures to reach cathedral-like underground chambers.</pre></div></div></details><details data-outcome="better"><summary class="better">R071 · 史前音乐与游戏科普 · 变化位置抽查 · 改善</summary><p>prevented anyone from turning into a tyrant 条件完整，另一版拆开 anyone 与 from。</p><small>原文位置 13056–13326；候选在打乱标识中为 A。</small><pre>downplay his own kill. This ritualized mocking punctured big egos, kept pride under control, prevented anyone from turning into a tyrant, and kept everyone smiling. Humor defused jealousy and made communal life lighthearted and bearable.
+Beyond humor, ancient humans ind</pre><div class="pair"><div><b>现行</b><pre>711.36-712.96 (1.60s): They would roast him mercilessly.
+713.04-715.84 (2.80s): The hunter had to laugh along and downplay his own kill.
+715.92-718.64 (2.72s): This ritualized mocking punctured big egos,
+718.88-721.28 (2.40s): kept pride under control, prevented anyone
+721.28-723.92 (2.64s): from turning into a tyrant, and kept everyone smiling.
+724.48-725.76 (1.28s): Humor defused jealousy
+725.92-728.16 (2.24s): and made communal life lighthearted and bearable.
+728.40-731.04 (2.64s): Beyond humor, ancient humans indulged heavily
+731.04-732.96 (1.92s): in the timeless pleasures of romance,</pre></div><div><b>候选</b><pre>711.36-712.96 (1.60s): They would roast him mercilessly.
+713.04-715.84 (2.80s): The hunter had to laugh along and downplay his own kill.
+715.92-718.64 (2.72s): This ritualized mocking punctured big egos,
+718.88-722.48 (3.60s): kept pride under control, prevented anyone from turning into a tyrant,
+722.64-723.92 (1.28s): and kept everyone smiling.
+724.48-725.76 (1.28s): Humor defused jealousy
+725.92-728.16 (2.24s): and made communal life lighthearted and bearable.
+728.40-730.08 (1.68s): Beyond humor, ancient humans
+730.08-732.96 (2.88s): indulged heavily in the timeless pleasures of romance,
+732.96-734.64 (1.68s): courtship, and decadent feasting.</pre></div></div></details><details data-outcome="mixed"><summary class="mixed">R072 · 史前音乐与游戏科普 · 变化位置抽查 · 有改善也有退步</summary><p>B 保留 teeth and bones，但拆开 devastating 与 painful disease，并将病名尾部与下一句合并；收益与问题同时存在。</p><small>原文位置 15903–16173；候选在打乱标识中为 B。</small><pre>t man, an adult woman, and an approximately seven-month-old puppy. Pathological analysis of the puppy&#x27;s teeth and bones revealed it had contracted canine distemper at an early age—a devastating, painful disease.
+The puppy could not have hunted. It could not have guarded</pre><div class="pair"><div><b>现行</b><pre>868.48-872.40 (3.92s): an Upper Paleolithic burial dating back roughly 14,000 years.
+872.56-874.72 (2.16s): Inside lay the skeletons of an adult man,
+874.96-878.16 (3.20s): an adult woman, and an approximately seven-month-old puppy.
+878.56-880.64 (2.08s): Pathological analysis of the puppy&#x27;s teeth
+880.64-883.76 (3.12s): and bones revealed it had contracted canine distemper
+883.76-886.72 (2.96s): at an early age—a devastating, painful disease.
+886.80-888.16 (1.36s): The puppy could not have hunted.
+888.32-889.76 (1.44s): It could not have guarded the camp.
+889.92-891.60 (1.68s): It had zero survival utility.</pre></div><div><b>候选</b><pre>868.48-872.40 (3.92s): an Upper Paleolithic burial dating back roughly 14,000 years.
+872.56-874.72 (2.16s): Inside lay the skeletons of an adult man,
+874.96-878.16 (3.20s): an adult woman, and an approximately seven-month-old puppy.
+878.56-881.76 (3.20s): Pathological analysis of the puppy&#x27;s teeth and bones revealed
+881.76-885.60 (3.84s): it had contracted canine distemper at an early age—a devastating,
+885.68-888.16 (2.48s): painful disease. The puppy could not have hunted.
+888.32-889.76 (1.44s): It could not have guarded the camp.
+889.92-891.60 (1.68s): It had zero survival utility.</pre></div></div></details><details data-outcome="mixed"><summary class="mixed">R073 · 家庭储蓄叙事 · 变化位置抽查 · 有改善也有退步</summary><p>一版拆开 happen to，另一版拆开 nothing like，属于错误转移。</p><small>原文位置 3609–3879；候选在打乱标识中为 B。</small><pre>s just how men like him were. At thirty-two, I figured if I worked hard enough and kept my head down, nothing like that could ever happen to me. That&#x27;s what you think at thirty-two.
+Every Thursday at seven there&#x27;s a bunch of us at a diner out on the highway. We push two</pre><div class="pair"><div><b>现行</b><pre>210.00-212.40 (2.40s): Dad never talked money at the supper table,
+212.48-216.72 (4.24s): not one time that I can remember, and that&#x27;s just how men like him were.
+217.28-219.92 (2.64s): At thirty-two, I figured if I worked hard enough
+219.92-223.12 (3.20s): and kept my head down, nothing like that could ever happen
+223.20-225.28 (2.08s): to me. That&#x27;s what you think at thirty-two.
+226.16-228.40 (2.24s): Every Thursday at seven there&#x27;s a bunch of us
+228.40-230.00 (1.60s): at a diner out on the highway.
+230.32-232.88 (2.56s): We push two tables up against the corner booth.
+233.28-236.24 (2.96s): It&#x27;s mostly retired men, plus a couple of widows</pre></div><div><b>候选</b><pre>210.00-212.40 (2.40s): Dad never talked money at the supper table,
+212.48-216.72 (4.24s): not one time that I can remember, and that&#x27;s just how men like him were.
+217.28-219.92 (2.64s): At thirty-two, I figured if I worked hard enough
+219.92-221.84 (1.92s): and kept my head down, nothing
+221.84-225.28 (3.44s): like that could ever happen to me. That&#x27;s what you think at thirty-two.
+226.16-228.40 (2.24s): Every Thursday at seven there&#x27;s a bunch of us
+228.40-230.00 (1.60s): at a diner out on the highway.
+230.32-232.88 (2.56s): We push two tables up against the corner booth.
+233.28-236.24 (2.96s): It&#x27;s mostly retired men, plus a couple of widows</pre></div></div></details><details data-outcome="better"><summary class="better">R074 · 家庭储蓄叙事 · 变化位置抽查 · 改善</summary><p>并列动作分开，writes one line in a notebook 保持完整。</p><small>原文位置 5525–5795；候选在打乱标识中为 B。</small><pre>es a pot of coffee, gets out a yellow legal pad, and pays whatever&#x27;s due. She looks at every balance one time and writes one line in a spiral notebook, the date and the total. Then it all goes back in the drawer until next month.
+
+I asked her, &quot;What if something happens</pre><div class="pair"><div><b>现行</b><pre>319.92-323.12 (3.20s): Louise looks at her money one morning a month, and that&#x27;s all.
+323.68-326.64 (2.96s): The morning after her Social Security comes in, she makes
+326.64-331.20 (4.56s): a pot of coffee, gets out a yellow legal pad, and pays whatever&#x27;s due.
+331.60-334.72 (3.12s): She looks at every balance one time and writes one line
+334.72-337.60 (2.88s): in a spiral notebook, the date and the total.
+337.92-340.56 (2.64s): Then it all goes back in the drawer until next month.
+340.88-343.84 (2.96s): I asked her, &quot;What if something happens in between?&quot;
+344.24-347.76 (3.52s): She said, &quot;Then it&#x27;ll still have happened when I look, Dale.&quot;</pre></div><div><b>候选</b><pre>319.92-323.12 (3.20s): Louise looks at her money one morning a month, and that&#x27;s all.
+323.68-326.64 (2.96s): The morning after her Social Security comes in, she makes
+326.64-331.20 (4.56s): a pot of coffee, gets out a yellow legal pad, and pays whatever&#x27;s due.
+331.60-333.68 (2.08s): She looks at every balance one time
+333.68-337.60 (3.92s): and writes one line in a spiral notebook, the date and the total.
+337.92-340.56 (2.64s): Then it all goes back in the drawer until next month.
+340.88-343.84 (2.96s): I asked her, &quot;What if something happens in between?&quot;
+344.24-347.76 (3.52s): She said, &quot;Then it&#x27;ll still have happened when I look, Dale.&quot;</pre></div></div></details><details data-outcome="better"><summary class="better">R075 · 家庭储蓄叙事 · 变化位置抽查 · 改善</summary><p>out of his garage 完整，另一版拆开 out 与 of。</p><small>原文位置 7324–7594；候选在打乱标识中为 B。</small><pre>vin&#x27;s seventy-nine. He drove a school bus for twenty-six years, and he&#x27;s fixed lawnmowers and snowblowers out of his garage for half the county since before I knew him. I&#x27;d always figured Marvin had money tucked away somewhere. You know how you size a man up. He drives </pre><div class="pair"><div><b>现行</b><pre>431.20-433.12 (1.92s): and it about knocked me out of the booth.
+433.52-434.80 (1.28s): Marvin&#x27;s seventy-nine.
+435.12-437.68 (2.56s): He drove a school bus for twenty-six years,
+437.92-440.24 (2.32s): and he&#x27;s fixed lawnmowers and snowblowers out
+440.24-443.28 (3.04s): of his garage for half the county since before I knew him.
+443.84-446.88 (3.04s): I&#x27;d always figured Marvin had money tucked away somewhere.
+447.20-448.80 (1.60s): You know how you size a man up.
+449.04-452.48 (3.44s): He drives a pickup with better than two hundred thousand miles on it,
+452.72-454.40 (1.68s): and he keeps it running himself.</pre></div><div><b>候选</b><pre>431.20-433.12 (1.92s): and it about knocked me out of the booth.
+433.52-434.80 (1.28s): Marvin&#x27;s seventy-nine.
+435.12-437.68 (2.56s): He drove a school bus for twenty-six years,
+437.92-441.04 (3.12s): and he&#x27;s fixed lawnmowers and snowblowers out of his garage
+441.04-443.28 (2.24s): for half the county since before I knew him.
+443.84-446.88 (3.04s): I&#x27;d always figured Marvin had money tucked away somewhere.
+447.20-448.80 (1.60s): You know how you size a man up.
+449.04-452.48 (3.44s): He drives a pickup with better than two hundred thousand miles on it,
+452.72-454.40 (1.68s): and he keeps it running himself.</pre></div></div></details><details data-outcome="better"><summary class="better">R076 · 家庭储蓄叙事 · 变化位置抽查 · 改善</summary><p>完整主语后切分，had somebody 的谓语单位完整。</p><small>原文位置 20688–20958；候选在打乱标识中为 B。</small><pre>been looking straight at it for a year without seeing it. Every one of the calm people at that Thursday table had somebody who knew the whole picture: every account, what it was for, where the papers were, and how to get into all of it.
+Louise&#x27;s sister in Tucson has a c</pre><div class="pair"><div><b>现行</b><pre>1237.76-1240.72 (2.96s): But that same morning I figured out there was a fifth thing,
+1240.96-1244.08 (3.12s): and I&#x27;d been looking straight at it for a year without seeing it.
+1244.48-1247.44 (2.96s): Every one of the calm people at that Thursday table had
+1247.44-1250.48 (3.04s): somebody who knew the whole picture: every account,
+1250.64-1254.48 (3.84s): what it was for, where the papers were, and how to get into all of it.
+1254.72-1258.56 (3.84s): Louise&#x27;s sister in Tucson has a copy of that spiral notebook
+1258.72-1261.68 (2.96s): and knows which drawer the folder&#x27;s in. Marvin</pre></div><div><b>候选</b><pre>1237.76-1240.72 (2.96s): But that same morning I figured out there was a fifth thing,
+1240.96-1244.08 (3.12s): and I&#x27;d been looking straight at it for a year without seeing it.
+1244.48-1247.28 (2.80s): Every one of the calm people at that Thursday table
+1247.28-1250.48 (3.20s): had somebody who knew the whole picture: every account,
+1250.64-1254.48 (3.84s): what it was for, where the papers were, and how to get into all of it.
+1254.72-1258.56 (3.84s): Louise&#x27;s sister in Tucson has a copy of that spiral notebook
+1258.72-1261.68 (2.96s): and knows which drawer the folder&#x27;s in. Marvin</pre></div></div></details><details data-outcome="better"><summary class="better">R077 · 家庭储蓄叙事 · 变化位置抽查 · 改善</summary><p>what it was for 完整，另一版单独留 for。</p><small>原文位置 22119–22389；候选在打乱标识中为 B。</small><pre>t it was worth that day and what it had been worth three weeks before. I showed her where the house money was and what it was for, and the rainy-decade money.
+I showed her the card and told her what the two numbers meant, and that we were six hundred and twenty dollars </pre><div class="pair"><div><b>现行</b><pre>1320.96-1322.00 (1.04s): So I went through it.
+1322.72-1325.68 (2.96s): I showed her the big account, what it was worth that day
+1325.68-1327.92 (2.24s): and what it had been worth three weeks before.
+1328.24-1330.72 (2.48s): I showed her where the house money was and what it was
+1330.72-1332.80 (2.08s): for, and the rainy-decade money.
+1333.12-1336.08 (2.96s): I showed her the card and told her what the two numbers meant,
+1336.40-1338.64 (2.24s): and that we were six hundred and twenty dollars
+1338.72-1341.76 (3.04s): to the good every month even if we never touched the rest.</pre></div><div><b>候选</b><pre>1320.96-1322.00 (1.04s): So I went through it.
+1322.72-1325.68 (2.96s): I showed her the big account, what it was worth that day
+1325.68-1327.92 (2.24s): and what it had been worth three weeks before.
+1328.24-1330.16 (1.92s): I showed her where the house money was
+1330.16-1332.80 (2.64s): and what it was for, and the rainy-decade money.
+1333.12-1336.08 (2.96s): I showed her the card and told her what the two numbers meant,
+1336.40-1338.64 (2.24s): and that we were six hundred and twenty dollars
+1338.72-1341.76 (3.04s): to the good every month even if we never touched the rest.</pre></div></div></details><details data-outcome="equal"><summary class="equal">R078 · 家庭储蓄叙事 · 变化位置抽查 · 基本持平</summary><p>时间状语、身体状态状语均可分开；未见明确净收益。</p><small>原文位置 26281–26551；候选在打乱标识中为 B。</small><pre>never lost another night&#x27;s sleep. That wouldn&#x27;t be true. I&#x27;m my father&#x27;s son, and some nights I still wake up at two-something with my stomach in a knot. The difference is that I don&#x27;t go downstairs anymore. I lie there, and I know the person next to me knows everything</pre><div class="pair"><div><b>现行</b><pre>1569.84-1570.64 (0.80s): Carol picked.
+1570.88-1573.92 (3.04s): I&#x27;d like to tell you I&#x27;ve never lost another night&#x27;s sleep.
+1574.32-1575.44 (1.12s): That wouldn&#x27;t be true.
+1576.00-1579.20 (3.20s): I&#x27;m my father&#x27;s son, and some nights I still wake up
+1579.20-1581.52 (2.32s): at two-something with my stomach in a knot.
+1581.92-1584.64 (2.72s): The difference is that I don&#x27;t go downstairs anymore.
+1585.04-1588.64 (3.60s): I lie there, and I know the person next to me knows everything I know,
+1588.96-1592.00 (3.04s): and it&#x27;s surprising how much that helps a man go back to sleep.</pre></div><div><b>候选</b><pre>1569.84-1570.64 (0.80s): Carol picked.
+1570.88-1573.92 (3.04s): I&#x27;d like to tell you I&#x27;ve never lost another night&#x27;s sleep.
+1574.32-1575.44 (1.12s): That wouldn&#x27;t be true.
+1576.00-1580.08 (4.08s): I&#x27;m my father&#x27;s son, and some nights I still wake up at two-something
+1580.08-1581.52 (1.44s): with my stomach in a knot.
+1581.92-1584.64 (2.72s): The difference is that I don&#x27;t go downstairs anymore.
+1585.04-1588.64 (3.60s): I lie there, and I know the person next to me knows everything I know,
+1588.96-1592.00 (3.04s): and it&#x27;s surprising how much that helps a man go back to sleep.</pre></div></div></details><details data-outcome="better"><summary class="better">R079 · 当前心理学解说（回归） · 变化位置抽查 · 改善</summary><p>linked with 与 love at first sight 完整。</p><small>原文位置 401–671；候选在打乱标识中为 A。</small><pre>and way more likely to happen when the woman they see is attractive. So, for many years, researchers believed it&#x27;s only linked with passion and sexual desire. But, during a 2017 experiment, they discovered that the subjects who experienced love at first sight didn&#x27;t onl</pre><div class="pair"><div><b>现行</b><pre>19.92-22.00 (2.08s): It&#x27;s more likely to happen to men than women,
+22.24-25.44 (3.20s): and way more likely to happen when the woman they see is attractive.
+25.68-28.40 (2.72s): So, for many years, researchers believed it&#x27;s only linked
+28.40-30.08 (1.68s): with passion and sexual desire.
+30.16-33.04 (2.88s): But, during a 2017 experiment, they discovered
+33.04-34.80 (1.76s): that the subjects who experienced love
+34.80-37.92 (3.12s): at first sight didn&#x27;t only feel passion and sexual desire,
+38.00-40.96 (2.96s): but also intimacy and commitment for people they barely knew.</pre></div><div><b>候选</b><pre>19.92-22.00 (2.08s): It&#x27;s more likely to happen to men than women,
+22.24-25.44 (3.20s): and way more likely to happen when the woman they see is attractive.
+25.68-27.68 (2.00s): So, for many years, researchers believed
+27.68-30.08 (2.40s): it&#x27;s only linked with passion and sexual desire.
+30.16-32.40 (2.24s): But, during a 2017 experiment,
+32.48-35.44 (2.96s): they discovered that the subjects who experienced love at first sight
+35.60-37.92 (2.32s): didn&#x27;t only feel passion and sexual desire,
+38.00-40.96 (2.96s): but also intimacy and commitment for people they barely knew.</pre></div></div></details><details data-outcome="better"><summary class="better">R080 · 当前心理学解说（回归） · 变化位置抽查 · 改善</summary><p>love at first sight、compared to 都更完整；短尾段仍保留。</p><small>原文位置 701–971；候选在打乱标识中为 B。</small><pre>re, but also intimacy and commitment for people they barely knew. Of course, the results were weaker compared to those in actual relationships, but still significantly stronger than the baseline.
+
+So, why would men feel intimacy and commitment for women they barely know</pre><div class="pair"><div><b>现行</b><pre>33.04-34.80 (1.76s): that the subjects who experienced love
+34.80-37.92 (3.12s): at first sight didn&#x27;t only feel passion and sexual desire,
+38.00-40.96 (2.96s): but also intimacy and commitment for people they barely knew.
+41.44-43.36 (1.92s): Of course, the results were weaker compared
+43.36-44.96 (1.60s): to those in actual relationships,
+45.04-47.36 (2.32s): but still significantly stronger than the baseline.
+48.16-49.60 (1.44s): So, why would men feel
+49.60-52.00 (2.40s): intimacy and commitment for women they barely know?
+52.32-54.08 (1.76s): Because it used to be advantageous.</pre></div><div><b>候选</b><pre>32.48-35.44 (2.96s): they discovered that the subjects who experienced love at first sight
+35.60-37.92 (2.32s): didn&#x27;t only feel passion and sexual desire,
+38.00-40.96 (2.96s): but also intimacy and commitment for people they barely knew.
+41.44-43.68 (2.24s): Of course, the results were weaker compared to those
+43.68-44.96 (1.28s): in actual relationships,
+45.04-47.36 (2.32s): but still significantly stronger than the baseline.
+48.16-49.60 (1.44s): So, why would men feel
+49.60-52.00 (2.40s): intimacy and commitment for women they barely know?
+52.32-54.08 (1.76s): Because it used to be advantageous.</pre></div></div></details><details data-outcome="better"><summary class="better">R081 · 当前心理学解说（回归） · 变化位置抽查 · 改善</summary><p>falling in love 与 committing to 完整。</p><small>原文位置 1214–1484；候选在打乱标识中为 A。</small><pre>o impress. The male brain, it adapted over centuries. Since they were looking for a faithful partner, falling in love fast would be an honest signal that he is ready to commit to her. But, that would happen only with women that seem worth committing to. Because out of t</pre><div class="pair"><div><b>现行</b><pre>59.44-62.96 (3.52s): The man could simply leave, abandoning her to raise the child alone.
+63.20-66.32 (3.12s): So, their brain adapted to be a bit harder to impress.
+66.48-69.12 (2.64s): The male brain, it adapted over centuries.
+69.52-72.00 (2.48s): Since they were looking for a faithful partner, falling
+72.00-75.44 (3.44s): in love fast would be an honest signal that he is ready to commit to her.
+75.60-78.80 (3.20s): But, that would happen only with women that seem worth committing
+78.88-82.56 (3.68s): to. Because out of these two women, only one makes you see a house
+82.64-85.68 (3.04s): and two kids, while the other only makes you feel lustful.</pre></div><div><b>候选</b><pre>59.44-62.96 (3.52s): The man could simply leave, abandoning her to raise the child alone.
+63.20-66.32 (3.12s): So, their brain adapted to be a bit harder to impress.
+66.48-69.12 (2.64s): The male brain, it adapted over centuries.
+69.52-72.32 (2.80s): Since they were looking for a faithful partner, falling in love
+72.32-75.44 (3.12s): fast would be an honest signal that he is ready to commit to her.
+75.60-78.40 (2.80s): But, that would happen only with women that seem worth
+78.40-82.08 (3.68s): committing to. Because out of these two women, only one makes you see
+82.08-85.68 (3.60s): a house and two kids, while the other only makes you feel lustful.</pre></div></div></details><details data-outcome="better"><summary class="better">R082 · 当前心理学解说（回归） · 变化位置抽查 · 改善</summary><p>主语、谓语、同位语的划分更自然。</p><small>原文位置 1781–2051；候选在打乱标识中为 A。</small><pre>to peak during orgasm. For men, testosterone disrupts the action of oxytocin. So, our initial bonding process is biologically linked with vasopressin, a hormone that rises during sexual anticipation and stimulation, but actually drops once a man has sex.
+
+So, a man is m</pre><div class="pair"><div><b>现行</b><pre>91.04-94.80 (3.76s): You see, for women, falling in love is linked to the oxytocin hormone,
+95.04-97.28 (2.24s): and that hormone tends to peak during orgasm.
+97.52-100.80 (3.28s): For men, testosterone disrupts the action of oxytocin.
+101.28-104.56 (3.28s): So, our initial bonding process is biologically linked
+104.56-108.24 (3.68s): with vasopressin, a hormone that rises during sexual anticipation
+108.24-111.68 (3.44s): and stimulation, but actually drops once a man has sex.
+112.16-114.48 (2.32s): So, a man is more likely to fall in love
+114.56-116.64 (2.08s): when he feels strong sexual attraction,</pre></div><div><b>候选</b><pre>91.04-94.80 (3.76s): You see, for women, falling in love is linked to the oxytocin hormone,
+95.04-97.28 (2.24s): and that hormone tends to peak during orgasm.
+97.52-100.80 (3.28s): For men, testosterone disrupts the action of oxytocin.
+101.28-103.28 (2.00s): So, our initial bonding process
+103.28-105.52 (2.24s): is biologically linked with vasopressin,
+105.68-109.12 (3.44s): a hormone that rises during sexual anticipation and stimulation,
+109.20-111.68 (2.48s): but actually drops once a man has sex.
+112.16-114.48 (2.32s): So, a man is more likely to fall in love
+114.56-116.64 (2.08s): when he feels strong sexual attraction,</pre></div></div></details><details data-outcome="mixed"><summary class="mixed">R083 · 当前心理学解说（回归） · 变化位置抽查 · 有改善也有退步</summary><p>第一条件枚举更完整，但第二句出现 demanding | and stressful 的枚举重排，净收益不明确。</p><small>原文位置 3841–4111；候选在打乱标识中为 B。</small><pre>ing—and cool feminine energy—soothing, nurturing, relaxed, and peaceful. If your life feels dull, repetitive, and emotionally flat, you&#x27;ll probably be attracted to a woman with hot energy because she makes you feel alive. On the other hand, if your life is chaotic, dema</pre><div class="pair"><div><b>现行</b><pre>202.96-206.64 (3.68s): women can have hot feminine energy—stimulating, passionate,
+206.72-210.24 (3.52s): wild, and challenging—and cool feminine energy—soothing,
+210.32-212.48 (2.16s): nurturing, relaxed, and peaceful.
+212.80-214.88 (2.08s): If your life feels dull, repetitive,
+214.96-217.36 (2.40s): and emotionally flat, you&#x27;ll probably be attracted
+217.44-220.16 (2.72s): to a woman with hot energy because she makes you feel alive.
+220.64-222.80 (2.16s): On the other hand, if your life is chaotic,
+222.88-225.44 (2.56s): demanding, and stressful, you&#x27;ll probably be attracted
+225.52-228.32 (2.80s): to a woman with cool energy because she&#x27;ll give you peace of mind.</pre></div><div><b>候选</b><pre>202.96-206.64 (3.68s): women can have hot feminine energy—stimulating, passionate,
+206.72-210.24 (3.52s): wild, and challenging—and cool feminine energy—soothing,
+210.32-212.48 (2.16s): nurturing, relaxed, and peaceful.
+212.80-215.92 (3.12s): If your life feels dull, repetitive, and emotionally flat,
+216.16-218.64 (2.48s): you&#x27;ll probably be attracted to a woman with hot energy
+218.64-220.16 (1.52s): because she makes you feel alive.
+220.64-223.44 (2.80s): On the other hand, if your life is chaotic, demanding,
+223.44-226.80 (3.36s): and stressful, you&#x27;ll probably be attracted to a woman with cool energy</pre></div></div></details><details data-outcome="better"><summary class="better">R084 · 当前心理学解说（回归） · 变化位置抽查 · 改善</summary><p>rather than 不再拆开。</p><small>原文位置 4500–4770；候选在打乱标识中为 A。</small><pre>lves. What did they discover? People&#x27;s impressions of their partners were more similar to their ideal partner rather than their partner&#x27;s self-reported description. So, we tend to see our partners the way we want to see them.
+
+“I love how she makes me feel. Like... like</pre><div class="pair"><div><b>现行</b><pre>237.76-240.40 (2.64s): one in which they described their ideal partner and one
+240.40-242.96 (2.56s): in which their partner actually described themselves.
+243.04-245.92 (2.88s): What did they discover? People&#x27;s impressions of their partners
+245.92-248.32 (2.40s): were more similar to their ideal partner rather
+248.32-250.32 (2.00s): than their partner&#x27;s self-reported description.
+250.48-253.60 (3.12s): So, we tend to see our partners the way we want to see them.
+254.24-255.76 (1.52s): “I love how she makes me feel.
+255.84-258.16 (2.32s): Like... like anything&#x27;s possible.”
+258.32-260.24 (1.92s): C. Poorer Social Perception.</pre></div><div><b>候选</b><pre>237.76-240.40 (2.64s): one in which they described their ideal partner and one
+240.40-242.96 (2.56s): in which their partner actually described themselves.
+243.04-245.92 (2.88s): What did they discover? People&#x27;s impressions of their partners
+245.92-248.00 (2.08s): were more similar to their ideal partner
+248.00-250.32 (2.32s): rather than their partner&#x27;s self-reported description.
+250.48-253.60 (3.12s): So, we tend to see our partners the way we want to see them.
+254.24-255.76 (1.52s): “I love how she makes me feel.
+255.84-258.16 (2.32s): Like... like anything&#x27;s possible.”
+258.32-260.24 (1.92s): C. Poorer Social Perception.</pre></div></div></details><h2>10. 数据与复现</h2><p>复现包含六份冻结 alignment.json、基线/候选源码、所有正式 SRT/VTT 和切点、各开发变体差异、逐阶段指标、抽样及打乱标识、评审意见、候选冻结哈希和复现脚本。解压后见 README.txt；候选源码用于隔离实验，不能将差异直接当成已经验证的生产补丁。</p><p><a href="experiment.zip">下载复现包</a> · <a href="summary.json">查看全部结构化结果</a></p><script>document.getElementById("filter").addEventListener("change",function(){for(const d of document.querySelectorAll("details[data-outcome]")){d.hidden=this.value!=="all"&&d.dataset.outcome!==this.value}})</script></body></html>

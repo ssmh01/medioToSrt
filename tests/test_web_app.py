@@ -107,7 +107,7 @@ class WebAppTests(unittest.TestCase):
             {
                 "zh": {"min_duration": 1.2, "max_duration": 6.5, "max_chars_per_line": 18},
                 "ja": {"min_duration": 1.2, "max_duration": 5.0, "max_chars_per_line": 17},
-                "en": {"min_duration": 1.2, "max_duration": 6.0, "max_chars_per_line": 42},
+                "en": {"min_duration": 1.2, "max_duration": 5.0, "max_chars_per_line": 42},
                 "ko": {"min_duration": 1.2, "max_duration": 6.5, "max_chars_per_line": 20},
             },
         )
@@ -132,13 +132,15 @@ class WebAppTests(unittest.TestCase):
         presets = self.client.get("/api/options").json()["profile_defaults"]
         expected_caps = {
             "zh": (34, 34, 26, 29), "ja": (26, 34, 26, 29),
-            "ko": (38, 38, 29, 32), "en": (84, 84, 65, 84),
+            "ko": (38, 38, 29, 32), "en": (60, 60, 60, 60),
         }
         for language, caps in expected_caps.items():
             for style, cap in zip(("youtube_long", "standard", "short", "slow_elder"), caps):
                 with self.subTest(language=language, style=style):
                     self.assertEqual(presets[language][style]["max_chars_total"], cap)
-        self.assertEqual(presets["en"]["youtube_long"]["max_duration"], 6.0)
+        for style in ("youtube_long", "standard", "short", "slow_elder"):
+            with self.subTest(language="en", style=style):
+                self.assertEqual(presets["en"][style]["max_duration"], 5.0)
         self.assertEqual(presets["ja"]["youtube_long"]["min_duration"], 1.2)
         self.assertEqual(presets["ja"]["youtube_long"]["max_duration"], 5.0)
         self.assertEqual(presets["ja"]["short"]["max_duration"], 4.2)

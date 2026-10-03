@@ -1,0 +1,1724 @@
+{
+  "applied_at": "2026-10-03T17:08:57.981791+08:00",
+  "scope": "已将冻结候选的英语语法关系和切点优先级接入当前工作区，仅英语启用分级优先级；默认 5 秒、60 字符；其他语言维持原评分。",
+  "frozen_candidate": {
+    "frozen_at": "2026-10-03T16:31:54.691553+08:00",
+    "selected_variant": "final_candidate",
+    "reason": "General dependency units and sentence-aware syntax; development removed most new relation cut candidates and modestly reduced sentence remnants while preserving all hard constraints. Accepted for historical validation, not selected for deployment.",
+    "files": {
+      "final-design.json": "fd41f5afccc56bbf2ebd7625439f534afc60b9fbe46adf42e7175558cbd64279",
+      "final_candidate/src/autosrt_aligner/language_rules.py": "0689854cfabe6ed163e50756ecd84c17cb43999a51a6309a5e641492fab14cec",
+      "final_candidate/src/autosrt_aligner/segmenter_v2.py": "91a1ddb71d7abac8bf42d89ecf14de620ecf50358987dfee173b9d466825c389",
+      "final_candidate/src/autosrt_aligner/profiles.py": "caf2dac340ca733109a9cec0920307cad6beb3cb1aba3baa9aa803b86069d052"
+    },
+    "validation_policy": "No candidate code or parameter changes after this freeze; report regressions, sample effects, and constraints without hiding any unsuccessful result."
+  },
+  "unit_tests": {
+    "passed": 117,
+    "failed": 0,
+    "regression_fixtures": "新增两个回归测试；修改前分别复现 rather than 拆分和跨句误连，修改后通过。"
+  },
+  "post_alignment_replay": {
+    "samples": 22,
+    "historical": 21,
+    "latest": 1,
+    "configurations": 88,
+    "exportable": 85,
+    "existing_constraint_rejections": 3,
+    "new_constraint_rejections": 0,
+    "english_long_video_exact_candidate_matches": 6,
+    "other_language_exact_before_matches": 64,
+    "existing_rejections": [
+      {
+        "id": "en-96ebf8e24761",
+        "language": "en",
+        "style": "slow_elder",
+        "status": "failed",
+        "error": "AlignmentError: 无法在现有 token 时间证据下满足字幕时长、字数和阅读速度限制"
+      },
+      {
+        "id": "en-c9b85a6b4091",
+        "language": "en",
+        "style": "slow_elder",
+        "status": "failed",
+        "error": "AlignmentError: 无法在现有 token 时间证据下满足字幕时长、字数和阅读速度限制"
+      },
+      {
+        "id": "en-psychology-current",
+        "language": "en",
+        "style": "slow_elder",
+        "status": "failed",
+        "error": "AlignmentError: 无法在现有 token 时间证据下满足字幕时长、字数和阅读速度限制"
+      }
+    ]
+  },
+  "pipeline_replay": {
+    "sample": "en-psychology-current",
+    "scope": "Full pipeline with frozen token engine; no new alignment/audio listening",
+    "publish_status": "pass",
+    "source_token_coverage": 1.0,
+    "cues": 137,
+    "matches_applied_replay_srt_vtt": true
+  },
+  "repo_sha256": {
+    "src/autosrt_aligner/language_rules.py": "6527faadda98fb5b2a2285a19a4228a0a02399a05ae6014fd8471ffb7eaba7da",
+    "src/autosrt_aligner/segmenter_v2.py": "a7c24bdddcb27a846fb4dfd32876caa10720a544011633ab49e77830cd5fcc7b",
+    "src/autosrt_aligner/profiles.py": "caf2dac340ca733109a9cec0920307cad6beb3cb1aba3baa9aa803b86069d052",
+    "tests/test_natural_segmentation.py": "73d008d293b039ca260998bf3504eecafb9a72339cae389f6230fb2431205a88",
+    "tests/test_web_app.py": "66a75db7f5663c339500966f2ede73a27d187a1e1cde1b99d6511e4fe166f836"
+  },
+  "repo_status": " M README.md\n M src/autosrt_aligner/language_rules.py\n M src/autosrt_aligner/profiles.py\n M src/autosrt_aligner/segmenter_v2.py\n M tests/test_natural_segmentation.py\n M tests/test_web_app.py\n?? reports/english-segmentation-experiment-20261003/\n",
+  "backup": "/private/tmp/english-segmentation-application-20261003/before",
+  "validation_directory": "/private/tmp/english-segmentation-application-20261003",
+  "replay_rows": [
+    {
+      "id": "ko-71a4c5f06988",
+      "language": "ko",
+      "style": "youtube_long",
+      "status": "pass",
+      "cues": 549,
+      "hashes": {
+        "cues": "4f96a72818d244149f0965896a08b639aef497116c6e4dabda0397e9f56f2155",
+        "srt": "5450cca383a83248aa7354c27ad9904c8e65651bfe069fa1b2c9111e9626e28d",
+        "vtt": "787bf6e3e1d5f61b46daffc080fefac0c03b0a6f958b013483e6765ec48c9caf"
+      },
+      "max_duration": 6.400000000000091,
+      "max_chars": 38,
+      "max_cps": 10.156250000000217,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "ko-71a4c5f06988",
+      "language": "ko",
+      "style": "standard",
+      "status": "pass",
+      "cues": 533,
+      "hashes": {
+        "cues": "96f41e04ef30ab942fd0dc5b90310ce634bcb637657bb42329d94f659c07163b",
+        "srt": "ab47d5a9c067a1bb2bb2b014e1b23451322bd9c2d3291bba6ea30b49c3e3d05e",
+        "vtt": "5e9b0ebf8fc3e58a3af82722486c9029daa5389d5fdac0ded22d2bee29acff5f"
+      },
+      "max_duration": 6.0,
+      "max_chars": 38,
+      "max_cps": 10.156250000000217,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "ko-71a4c5f06988",
+      "language": "ko",
+      "style": "short",
+      "status": "pass",
+      "cues": 654,
+      "hashes": {
+        "cues": "075b69f263ffe4e34eeecfe1473313711eba5919609dc24a017ce527bd3603f6",
+        "srt": "bd235ee363be5022df9c9fa640033d13d65652f1893cf77f62d731657a8574c4",
+        "vtt": "3843f3833d2656b16383a09c1117e6dfa2c5da8fbc1b86da134fe44d50cf55aa"
+      },
+      "max_duration": 4.160000000000082,
+      "max_chars": 29,
+      "max_cps": 10.156250000000217,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "ko-71a4c5f06988",
+      "language": "ko",
+      "style": "slow_elder",
+      "status": "pass",
+      "cues": 532,
+      "hashes": {
+        "cues": "23116e05b4c9990ee6c1eb8e0c21cd854b1b1d1e6612d72507e7576780305fea",
+        "srt": "63235fa97c8d561a25c55130f3514c34884195e3a6bdab0febd0891ee6f26a5a",
+        "vtt": "04e4a83548f5d6974802fe3174993f5a46496fb4c6d413820da5f83031f630bb"
+      },
+      "max_duration": 6.160000000000082,
+      "max_chars": 32,
+      "max_cps": 8.653846153845983,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "ja-8e2e91ec834a",
+      "language": "ja",
+      "style": "youtube_long",
+      "status": "pass",
+      "cues": 573,
+      "hashes": {
+        "cues": "efd78da531b43bc8e86bb35a591ab04f0d794a90da676996b9294edd6acac23f",
+        "srt": "21827ab81b79ae91208810640d8cda76901a386991dbcd21545dce00918e3fcf",
+        "vtt": "b244bf37a877cc3416e3b38f8bc0b69a6386c77a29e61dcdf76de516cd4298da"
+      },
+      "max_duration": 4.880000000000109,
+      "max_chars": 26,
+      "max_cps": 9.05172413793106,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "ja-8e2e91ec834a",
+      "language": "ja",
+      "style": "standard",
+      "status": "pass",
+      "cues": 477,
+      "hashes": {
+        "cues": "2f7707b40499d5ba0daad01fc7783b44ba1b2ebe7f85851bf97114198f6b4c09",
+        "srt": "cd55097be8a4fa615865fc888b8c83508ebc4b68d4dc08197cef07f391a9a839",
+        "vtt": "5e5c02486f8b56e0fc4390d491b1eb2ed97c84a49b6c10b40b89375908d10b38"
+      },
+      "max_duration": 5.920000000000073,
+      "max_chars": 34,
+      "max_cps": 8.695652173913027,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "ja-8e2e91ec834a",
+      "language": "ja",
+      "style": "short",
+      "status": "pass",
+      "cues": 595,
+      "hashes": {
+        "cues": "d1930f0a3ac2957b4025e8dc95adc295611eedf2b12d3cb94b26bbc7e0916385",
+        "srt": "935e02f72c78cd01248707fba0c70066f229a79a7340b54b600a84ff008cd4f1",
+        "vtt": "d0b15cc2f1b5ee3bb2fc25040e79a3363e88fe3a6311e913027453f4141b6d77"
+      },
+      "max_duration": 4.160000000000082,
+      "max_chars": 26,
+      "max_cps": 9.05172413793106,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "ja-8e2e91ec834a",
+      "language": "ja",
+      "style": "slow_elder",
+      "status": "pass",
+      "cues": 497,
+      "hashes": {
+        "cues": "d1401449eec2137e71a9537587216db929d033803adeebd95bc3ea0160298eef",
+        "srt": "0bb6f309bd97737a6c61fd47868e70104d8fe6a72b770a7d559eca65d68f72b0",
+        "vtt": "296bb69db431ee056edadb84428fff422e4e2bc93843506bf2d17450e7321e83"
+      },
+      "max_duration": 5.920000000000073,
+      "max_chars": 29,
+      "max_cps": 9.05172413793106,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "ja-348732b875d5",
+      "language": "ja",
+      "style": "youtube_long",
+      "status": "pass",
+      "cues": 783,
+      "hashes": {
+        "cues": "598c724b5bef551fe75ead6a4933e54aaa313fbd24fa900610bd32cddd62548f",
+        "srt": "726aa5697579295a235d0ae1ee90c8b228c06a61e6d45ce603504f0701264864",
+        "vtt": "854e337a7fdba710b29c8162e23a31e2f4b02e4ef3b35d7ccc53a092f5704ce1"
+      },
+      "max_duration": 4.32000000000005,
+      "max_chars": 26,
+      "max_cps": 10.937500000000233,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "ja-348732b875d5",
+      "language": "ja",
+      "style": "standard",
+      "status": "pass",
+      "cues": 657,
+      "hashes": {
+        "cues": "a85a2e6676684e8f83e09a1d296030cd2dde8b07a7efae1ff3396a61dc0b6f5f",
+        "srt": "a4d1db94c8067e025162e19792e5d3052b31683691c18ceb5454ae550f4c55bf",
+        "vtt": "49dc37af870f44b0ab7d0ae894e2582b64a3f58eec8ab63d423b31a5f18780cb"
+      },
+      "max_duration": 4.8799999999999955,
+      "max_chars": 34,
+      "max_cps": 9.722222222222141,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "ja-348732b875d5",
+      "language": "ja",
+      "style": "short",
+      "status": "pass",
+      "cues": 778,
+      "hashes": {
+        "cues": "d7f8b0c7cfe62a2b94854590b63e49ecbb0f91369213d6650e586917cec01a6d",
+        "srt": "ba3f9215639c06c1840439d767da75f793fe14fd73044081c71a2cd448ae7d0a",
+        "vtt": "19b5802bd127bc61273e1f00eaa03b85ba96fac92c426efda95c42027792e2e5"
+      },
+      "max_duration": 4.159999999999997,
+      "max_chars": 26,
+      "max_cps": 10.937500000000233,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "ja-348732b875d5",
+      "language": "ja",
+      "style": "slow_elder",
+      "status": "pass",
+      "cues": 694,
+      "hashes": {
+        "cues": "7cb9d28d2cf716f15222310223a88945a0e894aa0b92bf16c22a3b09af3dccc4",
+        "srt": "a688e1317c0545b3f50e045eff829d8f44441ff1168814b17b7bd9d75fdb2f40",
+        "vtt": "5104105ed5ab56cfba78264ad27f0efeaf0d7779bc5df4d4a9bc90d7d564971e"
+      },
+      "max_duration": 4.640000000000001,
+      "max_chars": 29,
+      "max_cps": 9.722222222221854,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "ja-9164c6a57e6b",
+      "language": "ja",
+      "style": "youtube_long",
+      "status": "pass",
+      "cues": 661,
+      "hashes": {
+        "cues": "a5f14747732c5812ad39e682ac9858de215c3f9b7791e9c4ad1b173457f70884",
+        "srt": "b5b70d383d44d556ab9a6b993e991aca83b10ae76ad5e829ab368732dc11e8e2",
+        "vtt": "e0f86f93b540d14a1961d4aadae3abb4bbf3991df30fe2c461c38aca93fedaab"
+      },
+      "max_duration": 4.960000000000036,
+      "max_chars": 26,
+      "max_cps": 8.552631578947471,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "ja-9164c6a57e6b",
+      "language": "ja",
+      "style": "standard",
+      "status": "pass",
+      "cues": 538,
+      "hashes": {
+        "cues": "97c56190bf22638d41beffbed2dc139a156c982f875913403262590c0424b71a",
+        "srt": "b05cfc704bea7f8d934512419e9056bc74cbd9f9deb23ede4de3dd8bc8a16070",
+        "vtt": "4c2e4fdf9c30a674c0c23207efd7a3a30afdfa9e3cca77e03bce9447a42abb12"
+      },
+      "max_duration": 6.0,
+      "max_chars": 34,
+      "max_cps": 8.552631578947471,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "ja-9164c6a57e6b",
+      "language": "ja",
+      "style": "short",
+      "status": "pass",
+      "cues": 679,
+      "hashes": {
+        "cues": "2abd24f29f1369c019303879a5d5547295c548e0a8acb848918c1407d7482f4e",
+        "srt": "bdcc3677e0ce5ffeeb1a09067e2cab509e09b99aa876e147cfbdbd198b926d06",
+        "vtt": "34d6d2f88a73445cbfcfed29081f5b701965f89664d83aac73a52dd67bd95aa6"
+      },
+      "max_duration": 4.160000000000082,
+      "max_chars": 26,
+      "max_cps": 8.552631578947471,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "ja-9164c6a57e6b",
+      "language": "ja",
+      "style": "slow_elder",
+      "status": "pass",
+      "cues": 567,
+      "hashes": {
+        "cues": "ce69129de8346faaa9c82b05f5c36700d66f1a917331acf375f8d8a645154e95",
+        "srt": "bb9c52dbc88d3d4a1d9c27089c18c14e4723212074eaefbbfe73214352959ebd",
+        "vtt": "22dfcdb7ccfe53b4162e61ce21fb4908c447f73142fe2bbb9f1eba49b92733fc"
+      },
+      "max_duration": 6.400000000000091,
+      "max_chars": 29,
+      "max_cps": 8.552631578947471,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "ja-c9e74c50fc49",
+      "language": "ja",
+      "style": "youtube_long",
+      "status": "pass",
+      "cues": 618,
+      "hashes": {
+        "cues": "9f61cf6d2b9b6c942e55426099b50e5b40a1bd4d00a1361d31a15eda316634b6",
+        "srt": "43dd360afb248ff9ee45bc50c291e7b33188d54b1428081b6b80dba9a3fb523c",
+        "vtt": "fceddb0a327ade27bb20a5dafc6adbcc37a7766ed296e210f3acef24ee3c5b55"
+      },
+      "max_duration": 4.240000000000009,
+      "max_chars": 26,
+      "max_cps": 10.624999999999094,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "ja-c9e74c50fc49",
+      "language": "ja",
+      "style": "standard",
+      "status": "pass",
+      "cues": 515,
+      "hashes": {
+        "cues": "3589d69e97edb7dc49cf6f946fe9c8d2f253cdd9c8fb4537d336ac6289856066",
+        "srt": "49792a0cdeac51362f7615c3bfda58e8f9607c4fe3139913299ceefe44be1001",
+        "vtt": "37d56eff5a07d7c6b14fa0c819fe2aac503e668e7745134734bfa11d52e9d0d2"
+      },
+      "max_duration": 5.1200000000000045,
+      "max_chars": 34,
+      "max_cps": 10.624999999999094,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "ja-c9e74c50fc49",
+      "language": "ja",
+      "style": "short",
+      "status": "pass",
+      "cues": 612,
+      "hashes": {
+        "cues": "9970242f9ec22c337c8c359ad10c34f85d8a9f17b31451b09f1704430ecae4d4",
+        "srt": "0f20de36776cd63585bd50221fc0832121c49bee3dc2009e3141a469090df5f9",
+        "vtt": "7a44b50d9456bb0d217fb6e9d55d4599affb8c74332be976ed6d7d77e981c6b3"
+      },
+      "max_duration": 4.160000000000082,
+      "max_chars": 26,
+      "max_cps": 10.624999999999094,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "ja-c9e74c50fc49",
+      "language": "ja",
+      "style": "slow_elder",
+      "status": "pass",
+      "cues": 539,
+      "hashes": {
+        "cues": "429b2070eb2a1df31908dc6979a1893b1684e826997c851509922a51c9b84680",
+        "srt": "ee1ef5a2968f0ae1ee0541c5de6689eddce7d0f90c727384c12a156dd08b328c",
+        "vtt": "5b00a8b094522d0e923978a5b212b3f36d6cb57d70a54ce6a392d034f551e8e2"
+      },
+      "max_duration": 4.880000000000109,
+      "max_chars": 29,
+      "max_cps": 10.11904761904792,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "ko-300d685a627b",
+      "language": "ko",
+      "style": "youtube_long",
+      "status": "pass",
+      "cues": 493,
+      "hashes": {
+        "cues": "d2a18f6a5b6a027fc0971970ecd1a0b0a015faaa6ed06317d1b3c64e5336e02e",
+        "srt": "58a348ea35f135d02e39e67123bfa0f6916677fb80587c58d76510f0698305fe",
+        "vtt": "32263963ec4c0c71b84cb9717af2fbc8801423982fb9c8278139a67bfd48bf6c"
+      },
+      "max_duration": 6.32000000000005,
+      "max_chars": 38,
+      "max_cps": 10.416666666666272,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "ko-300d685a627b",
+      "language": "ko",
+      "style": "standard",
+      "status": "pass",
+      "cues": 477,
+      "hashes": {
+        "cues": "f8970da69cc5a685ba9b21a951af0cb1dd27782a03e105b0f7d76de87ca01249",
+        "srt": "a4289f05359625d7565b1e3884a535e1be048524d24aa5fe0f53aa2d63de3c91",
+        "vtt": "665a4dd1187c11023cb6bcd2ae1b201e69a05f975b6e34391282a43bcf2e2c34"
+      },
+      "max_duration": 5.919999999999959,
+      "max_chars": 38,
+      "max_cps": 9.5,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "ko-300d685a627b",
+      "language": "ko",
+      "style": "short",
+      "status": "pass",
+      "cues": 576,
+      "hashes": {
+        "cues": "4a5dfa4c005066f582a4cc0a36c2c16981ac233b0da6ae223e53008974fa7f91",
+        "srt": "0bc8d2975fa040bee8022bfb66fa650a045cdd2f65c43c1eed931394dc363c81",
+        "vtt": "683d520abc0a07056840d5d87cce1c4323842b85f53e0387f81bd53f2b7bf628"
+      },
+      "max_duration": 4.160000000000082,
+      "max_chars": 29,
+      "max_cps": 9.5,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "ko-300d685a627b",
+      "language": "ko",
+      "style": "slow_elder",
+      "status": "pass",
+      "cues": 466,
+      "hashes": {
+        "cues": "7160aac8b6e895ce12028768d038bc9e115965af9f3c3b0c0b80f81f44f5180c",
+        "srt": "e677770c44fa3e7651db5f8126d9e14c72bb8d5b7ae405bd84056b27b47e475e",
+        "vtt": "d77790d708130924bd65f438f83ba056371e0cbd64ebd54e5fac6bd686a0be19"
+      },
+      "max_duration": 6.32000000000005,
+      "max_chars": 32,
+      "max_cps": 8.620689655172228,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-cdc5dcefa7dd",
+      "language": "zh",
+      "style": "youtube_long",
+      "status": "pass",
+      "cues": 500,
+      "hashes": {
+        "cues": "6a3b3acb39268188ce6e40974e6ee60bd8edfe4161e4da736275e02b62ee3f09",
+        "srt": "7b75dbb014cb8ff1896b9a5f7e97012382469091087f00e8d915e47677456bcc",
+        "vtt": "c5f8896c07e54356138996a8eb635423a28b3d20a4fc17f375fc4fc330ea33f6"
+      },
+      "max_duration": 6.480000000000018,
+      "max_chars": 34,
+      "max_cps": 7.499999999999716,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-cdc5dcefa7dd",
+      "language": "zh",
+      "style": "standard",
+      "status": "pass",
+      "cues": 487,
+      "hashes": {
+        "cues": "a584293c8165433114eae3256ded8857116f7e878840f879ab912b3c7236498d",
+        "srt": "c14d8f66b735c3ab589111f477f0e6e177706aef48502d733a7afcb6344b1bfe",
+        "vtt": "cf00318f04d0c6ffcb42bef3abfcc35f76d763de5ece098767be20fcb22be049"
+      },
+      "max_duration": 6.0,
+      "max_chars": 34,
+      "max_cps": 7.499999999999716,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-cdc5dcefa7dd",
+      "language": "zh",
+      "style": "short",
+      "status": "pass",
+      "cues": 594,
+      "hashes": {
+        "cues": "0e42347ebd4dbb6f4783e46a7b99ceaae72ba7a4eb068fa7ea36a7749f0a180c",
+        "srt": "8a7af3e14b7de0f8cee5c68c1f84010a40b64561c3432cbddc6a701482fd3585",
+        "vtt": "7584689a13ab925d5bf5376963941427669f8a3c9ff4fb0274c8906562fb1b56"
+      },
+      "max_duration": 4.160000000000082,
+      "max_chars": 25,
+      "max_cps": 7.499999999999716,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-cdc5dcefa7dd",
+      "language": "zh",
+      "style": "slow_elder",
+      "status": "pass",
+      "cues": 478,
+      "hashes": {
+        "cues": "ef8d4b9f6633aefffafa11058776f63a61c1645b41e4bc5a3e3543ad51905149",
+        "srt": "3f8fcfd5a2cbfa4637711f480ec17f96c89fb54cd5379eb470980ffb95089841",
+        "vtt": "8e23d9b3bfb577548d0f922278b456f2ae4a72040a3097ce18073ef70eb1f0a4"
+      },
+      "max_duration": 6.6400000000001,
+      "max_chars": 29,
+      "max_cps": 7.142857142857295,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-e5eaccca6784",
+      "language": "zh",
+      "style": "youtube_long",
+      "status": "pass",
+      "cues": 569,
+      "hashes": {
+        "cues": "216d292ae1ecb38aeddb65a50eb58acd06d0af1e9c1036cdd0ab1a5f7c92ca60",
+        "srt": "44f44cb9a371a4b4fc7a3b73e22654c3a06cee3252e26f4df6a7c06deee4ffa0",
+        "vtt": "ad2ec16dc85c5b706e7a9fcfd0d6ed858579c0ddf447fae08cfa2a1b8239771d"
+      },
+      "max_duration": 6.400000000000091,
+      "max_chars": 34,
+      "max_cps": 8.333333333333018,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-e5eaccca6784",
+      "language": "zh",
+      "style": "standard",
+      "status": "pass",
+      "cues": 564,
+      "hashes": {
+        "cues": "056065686933dd54b5ac9ab374b699c0b9e96be73848a33b85b44117ef45ee01",
+        "srt": "5b953c90edd47dc2e75be690ba0331c12e81068c283e9d6be6cc004b39d57d6a",
+        "vtt": "88097970b016f8f298c53cd71e7378b18e25154757834f1c1985bb61257050a5"
+      },
+      "max_duration": 6.0,
+      "max_chars": 34,
+      "max_cps": 7.6388888888886,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-e5eaccca6784",
+      "language": "zh",
+      "style": "short",
+      "status": "pass",
+      "cues": 723,
+      "hashes": {
+        "cues": "69196048785202bd4f3bfa1524290e52fe0c628777d7009219511cd69d2cd47d",
+        "srt": "0717f1e9bf7132e1d02c55ab4f967bc1074c199517020da4908572cd49a75b6f",
+        "vtt": "ff2c636b6311f57ca8dc75f0c7f6d503c98840a1da9e51d74d2e7d7f8e38b260"
+      },
+      "max_duration": 4.160000000000082,
+      "max_chars": 26,
+      "max_cps": 7.692307692307962,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-e5eaccca6784",
+      "language": "zh",
+      "style": "slow_elder",
+      "status": "pass",
+      "cues": 580,
+      "hashes": {
+        "cues": "603d0a4c77afed5e8b0d6ff66c8f704bafe6241ca1027ab4ccc7394d9abd92e1",
+        "srt": "d72174145ccfe7bd0e50f6cf6e0a063e1a586d0488aca03c932481ac119e1cb3",
+        "vtt": "c36ae8d8152509eaf97d53b0a7cd67d6b7e55485b31443b610602cbbad9580ea"
+      },
+      "max_duration": 6.079999999999927,
+      "max_chars": 29,
+      "max_cps": 7.142857142856872,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-d96b9d470368",
+      "language": "zh",
+      "style": "youtube_long",
+      "status": "pass",
+      "cues": 406,
+      "hashes": {
+        "cues": "c1acc391dffe0eb2c0b7d213608f23b13c3dbedff6f9ff49dad82e757a8fc82f",
+        "srt": "c4424442e53561c23f5c7a4a47b833f1ec2ed0f0f6f50717d193e3c1b6f43f1a",
+        "vtt": "8232cf4219c97eeaf97c4d6a845668a1049f8fc177d073fc4e6066abbab17bc0"
+      },
+      "max_duration": 6.480000000000018,
+      "max_chars": 34,
+      "max_cps": 7.954545454545496,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-d96b9d470368",
+      "language": "zh",
+      "style": "standard",
+      "status": "pass",
+      "cues": 415,
+      "hashes": {
+        "cues": "fd1677bce08fc05829e96ee59f5b911ba6e2fefd263569e75eb67edb10a5a337",
+        "srt": "537fad1321b4dff4b17941d76e38646244a263631b2f0a9f00e1842eae0b9122",
+        "vtt": "3b1bcfabfd8ff23dcff5de65559884b8eee7bdaeb7c5c72574ba73a7a7f27199"
+      },
+      "max_duration": 6.0,
+      "max_chars": 34,
+      "max_cps": 7.954545454545496,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-d96b9d470368",
+      "language": "zh",
+      "style": "short",
+      "status": "pass",
+      "cues": 555,
+      "hashes": {
+        "cues": "f2599ea16f6060dcca7c655b7d75ed168b5a3735382513d0287c8be6e310ef9c",
+        "srt": "3afb21cfbf6b17b91e2bdf8729a33948b1f4e381a11360dbfbbbf3804ad0cc42",
+        "vtt": "4e71574f58d7fa4470a1ded12baffc57e21f8f3e3da8f868ca976cc7fe14e9d1"
+      },
+      "max_duration": 4.192000000000007,
+      "max_chars": 26,
+      "max_cps": 7.327586206896753,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-d96b9d470368",
+      "language": "zh",
+      "style": "slow_elder",
+      "status": "pass",
+      "cues": 449,
+      "hashes": {
+        "cues": "541962c7e38d2cae530a023d9957dcbe0b0e96aa6d1c2eac0c87ee73f17de407",
+        "srt": "17909ac098c7188f1f97d0938e65f29274fb562d837bb06d6ca36d6fc718c058",
+        "vtt": "907e58af2d15b57eecc4c831bb825d3eb99cd1bafd7872f22a3497969485efe0"
+      },
+      "max_duration": 6.480000000000018,
+      "max_chars": 29,
+      "max_cps": 7.0312499999998375,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-e7ad46a88cfb",
+      "language": "zh",
+      "style": "youtube_long",
+      "status": "pass",
+      "cues": 443,
+      "hashes": {
+        "cues": "2e26430170bcff00da9e4f565ca0851c4f15e1e47f86439bee8ba44382f30b3d",
+        "srt": "c2f5c85c3b40995d6f6898a06fbe6891b8df3a05101bb251e5385430f3c8786c",
+        "vtt": "35d82437a25837f29d4dcd3f3df0952863492a68743152a700f4608658ee76cf"
+      },
+      "max_duration": 6.47999999999999,
+      "max_chars": 34,
+      "max_cps": 8.333333333333018,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-e7ad46a88cfb",
+      "language": "zh",
+      "style": "standard",
+      "status": "pass",
+      "cues": 421,
+      "hashes": {
+        "cues": "47f1b5e4028ca7737dba9078268d26482326fd1f1c0962ba8ac16d6a0ed147e1",
+        "srt": "36b5ce2053b5fbe11f8038163eeaba004b16fa2db7106c68719afcb7d9c7b7ea",
+        "vtt": "4ba88b4479f82e36ec8362c5f9b59f56fda1f8f832430dfcf5a71403024df446"
+      },
+      "max_duration": 5.91599999999994,
+      "max_chars": 34,
+      "max_cps": 8.0,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-e7ad46a88cfb",
+      "language": "zh",
+      "style": "short",
+      "status": "pass",
+      "cues": 537,
+      "hashes": {
+        "cues": "637230675e0bfc725e076fdf4233b9d3ef1a1dc29980402e1f2ebf3ffa060281",
+        "srt": "5d5e9392c375e5aeb466d0134665fc2f4df78d1923a1460ffad68021de3b1e7b",
+        "vtt": "c1fb30d4a5d31cf12ec6522e2ce6960df27471ecc215f03d6ff3baf6b7257bac"
+      },
+      "max_duration": 4.160000000000082,
+      "max_chars": 26,
+      "max_cps": 8.333333333333018,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-e7ad46a88cfb",
+      "language": "zh",
+      "style": "slow_elder",
+      "status": "pass",
+      "cues": 456,
+      "hashes": {
+        "cues": "988a427284c54848fd326e99cff140791958a93b0c1d9e335c5c6388aca6940d",
+        "srt": "32ef922c8c6f1309e5cffcab63dd13893e37badd00b2a7cde6934f657bc5196b",
+        "vtt": "623a5407af2a332be7c688d2408e027d3bc6ff5f30a05a2e3105a504907f1d1d"
+      },
+      "max_duration": 6.719999999999914,
+      "max_chars": 29,
+      "max_cps": 7.211538461538714,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-39f792e92b4c",
+      "language": "zh",
+      "style": "youtube_long",
+      "status": "pass",
+      "cues": 439,
+      "hashes": {
+        "cues": "791d263fa12d9c53b6a84c188b757cf28326e1dfaaf6dd7f66b5c21b499a467f",
+        "srt": "d71bcc1ace0816cc5b1ba20c1098b9b9416555c62ea1f1b9c7cd3b50e0486d0e",
+        "vtt": "1aa1944ad9d8fc94d9e1b847b39af4dd645d7290cb5376e4f94ed0b7bc36ec44"
+      },
+      "max_duration": 6.480000000000018,
+      "max_chars": 34,
+      "max_cps": 7.894736842105358,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-39f792e92b4c",
+      "language": "zh",
+      "style": "standard",
+      "status": "pass",
+      "cues": 439,
+      "hashes": {
+        "cues": "0ddec69ba73a4b673074b22a3cc3d64673566d10461ca649149b1c9e4a81d163",
+        "srt": "4eb080da751440fc81d6cac2ff1b1411e8f5dc09fe990f62603312f876d69177",
+        "vtt": "9b4d39eff6ac9bcaabc5ebd099b0988820f82cff6d7c981a00506ed0ad00d439"
+      },
+      "max_duration": 6.0,
+      "max_chars": 34,
+      "max_cps": 7.894736842105358,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-39f792e92b4c",
+      "language": "zh",
+      "style": "short",
+      "status": "pass",
+      "cues": 567,
+      "hashes": {
+        "cues": "0458a4eeb2390c7e4a870d5ab4d369a2f53fa439b267b088a7268316321cc09a",
+        "srt": "6fb9a6d3e0b3f756aa5a8886aad3f698543dcddb6ef859e70f79351bc1689b90",
+        "vtt": "fc7fd0f417dd5aa08d70ef96e1f84245deac5db291900706d99b704e7e777468"
+      },
+      "max_duration": 4.160000000000082,
+      "max_chars": 26,
+      "max_cps": 7.894736842105358,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-39f792e92b4c",
+      "language": "zh",
+      "style": "slow_elder",
+      "status": "pass",
+      "cues": 459,
+      "hashes": {
+        "cues": "733b1b6b626e9080ef86e1efcfadd03b859c39cedc9ee0f894e4baf9c84f4ada",
+        "srt": "27fd1a14f0beb52f756ea1d575c7c3c0bb2ddda21a3f273e1a250b3b9fa94f82",
+        "vtt": "04edbba32eadf8d70dfa8886d14b653aae192a6d55201f33eedc008c3e8838f6"
+      },
+      "max_duration": 6.560000000000002,
+      "max_chars": 29,
+      "max_cps": 6.875000000000391,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-f4b29983c5a5",
+      "language": "zh",
+      "style": "youtube_long",
+      "status": "pass",
+      "cues": 499,
+      "hashes": {
+        "cues": "88f30c8b5116dd463e2d809588a98e059c69c3dae468029a96aa5e388a796bd3",
+        "srt": "b4a3085ecf11d4ef55786c27b1d571e13a42749f5065f815b6f18ccf9d1b1d6b",
+        "vtt": "a9bd0e888a6f468b035c6c42f76c430d49bbac96ab69ab34e36e608804f8b55f"
+      },
+      "max_duration": 6.320000000000164,
+      "max_chars": 34,
+      "max_cps": 8.333333333333018,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-f4b29983c5a5",
+      "language": "zh",
+      "style": "standard",
+      "status": "pass",
+      "cues": 496,
+      "hashes": {
+        "cues": "5b47ee1556b86f4ddf51767aaa34035c4a2d9bcb5ee2e9c91ed62d6d6aa25709",
+        "srt": "4410330380b748c029c413b237a41746ee473088b203d8047ac054fa9713b6e5",
+        "vtt": "f8b78fb5e7f4b13792bb5c2b0cfbe367f843f90e18174862d825d6b08aef8eaf"
+      },
+      "max_duration": 6.0,
+      "max_chars": 34,
+      "max_cps": 8.333333333333018,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-f4b29983c5a5",
+      "language": "zh",
+      "style": "short",
+      "status": "pass",
+      "cues": 613,
+      "hashes": {
+        "cues": "2a9ea58bfb3bb06920edca8add6867dc45de45a9464b396b626c224538623279",
+        "srt": "c1ff74fd5480b2bf317278127eab2b5a9699b0d5b2d828d0dc8bb0246a27c07e",
+        "vtt": "3f13e63f4d5bcfd855fab5ca208a15eb4c26c7ceccebb6fefb4bf5dbec76d4f5"
+      },
+      "max_duration": 4.160000000000082,
+      "max_chars": 26,
+      "max_cps": 8.333333333333018,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-f4b29983c5a5",
+      "language": "zh",
+      "style": "slow_elder",
+      "status": "pass",
+      "cues": 502,
+      "hashes": {
+        "cues": "da98b524af3c6c2fd069f3f5d4be42590ff36edad5ec22b8366497164b8de203",
+        "srt": "936aa81709f55bc7398d78bd7c102e697524bca7705b576692a97ccf348e39bf",
+        "vtt": "fdbd5f943977c57d72632f40ca4ba0288dd077077b223b2dea3ce7ce7187ef8c"
+      },
+      "max_duration": 6.32000000000005,
+      "max_chars": 29,
+      "max_cps": 7.142857142856872,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-39fe4cad143c",
+      "language": "zh",
+      "style": "youtube_long",
+      "status": "pass",
+      "cues": 551,
+      "hashes": {
+        "cues": "fcee43e5cfef694ea0cb60cac6ce302c7e070ae0d18549be7387d55d1283a63f",
+        "srt": "a6006d42ec71a6c4a8737a0bba6737c362e605aaf2f5a4659281a80dc0c422ad",
+        "vtt": "bd33f8a3948a8439e9d4f682cb62235f9a61803f57b4a1b653ba5791e2bbceaa"
+      },
+      "max_duration": 6.400000000000091,
+      "max_chars": 34,
+      "max_cps": 8.333333333334004,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-39fe4cad143c",
+      "language": "zh",
+      "style": "standard",
+      "status": "pass",
+      "cues": 534,
+      "hashes": {
+        "cues": "6fd78f368d52fbe03d1831fef92d24b1a583fb728c6db53c98604467e978b698",
+        "srt": "c5f9a75150014e34b57c59f7b7137c715c0898d069edf6dfd764a537b8ee5392",
+        "vtt": "41e59a422150a3a0ac7380a0c54e4e9504a1bbbc75d42134daf467880a21004b"
+      },
+      "max_duration": 6.0,
+      "max_chars": 34,
+      "max_cps": 7.812500000000167,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-39fe4cad143c",
+      "language": "zh",
+      "style": "short",
+      "status": "pass",
+      "cues": 649,
+      "hashes": {
+        "cues": "573bc15786fdd48e7aa0915f28b48bfe5a7e95ff2fa0c4133f7ab0fe3b69e23c",
+        "srt": "f2c93cf24a774859886625bf34c9a9ae1492bf440d8e21facb9328686d3ed832",
+        "vtt": "88a473d6996bf99dee3f9729c6ad01896133e3549b07fef78dc8b4ba3882add9"
+      },
+      "max_duration": 4.160000000000082,
+      "max_chars": 26,
+      "max_cps": 8.035714285715068,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-39fe4cad143c",
+      "language": "zh",
+      "style": "slow_elder",
+      "status": "pass",
+      "cues": 532,
+      "hashes": {
+        "cues": "133f756a4f56b601195a1a4a55092de6d0eea40797147a970d6d3f23dbbea0a2",
+        "srt": "4b96048046f85ff7b734fe3099aded9b08755f820a3f30989deff6f6936b29b7",
+        "vtt": "e459773715c6ee3adeade5e07dc59d73740bcab13f97dfff8b72f7af7f019aec"
+      },
+      "max_duration": 6.080000000000155,
+      "max_chars": 29,
+      "max_cps": 7.0,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-ce8d14301875",
+      "language": "zh",
+      "style": "youtube_long",
+      "status": "pass",
+      "cues": 560,
+      "hashes": {
+        "cues": "1dd9a3334830b5638e403ca6d61f35bb82dbd096dbde2d7206d93fed7b4f9ff6",
+        "srt": "80a7d72d426a54cda207240a93f52705b13c8aef5113103ad5947a3f0d6f8374",
+        "vtt": "864beb295dca7416370286bfccf0a2a9c798cdd1409467aba477eb0a6890647e"
+      },
+      "max_duration": 6.480000000000018,
+      "max_chars": 34,
+      "max_cps": 8.333333333333018,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-ce8d14301875",
+      "language": "zh",
+      "style": "standard",
+      "status": "pass",
+      "cues": 541,
+      "hashes": {
+        "cues": "475d567b0db751a634fc6ac094cd9933fd9e71a7aef5e38d6100c252eeddffee",
+        "srt": "58b4bd4454674ccb3880be5145fa29353983c2f9e91a8f3aee9a49dbc02517ea",
+        "vtt": "6366d2e829a3c13e5d348dae4fd97a9145a3ca545091d193836701e3992432e9"
+      },
+      "max_duration": 6.0,
+      "max_chars": 34,
+      "max_cps": 7.6388888888886,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-ce8d14301875",
+      "language": "zh",
+      "style": "short",
+      "status": "pass",
+      "cues": 669,
+      "hashes": {
+        "cues": "ba0ab92b0a02a5595fd17bcc9196d6deea7c5994e66dd6ebaeb95d1a05000b55",
+        "srt": "5d07c486e0f85e08952cc892e57c6be6a266350bbe53645201a118a7f0c4da6d",
+        "vtt": "15c05cddfad1994decd6fce9c5ce7b66e8581ee14d7792175e3c79aa15ed2420"
+      },
+      "max_duration": 4.160000000000082,
+      "max_chars": 26,
+      "max_cps": 7.6388888888886,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-ce8d14301875",
+      "language": "zh",
+      "style": "slow_elder",
+      "status": "pass",
+      "cues": 546,
+      "hashes": {
+        "cues": "5d313a04a36ce7decc183708db710467132cad889e9373a54a79805cc20c0c3b",
+        "srt": "4946c6183ee4fed268b495cefce6456049fd146c425d5ab4f9737c770cf0baaf",
+        "vtt": "4e68d542f0a36da367658a7f9bdf6cab8a6d4eb479252da15017c329284b2a55"
+      },
+      "max_duration": 6.160000000000025,
+      "max_chars": 29,
+      "max_cps": 6.666666666666414,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-d7a26d53acc2",
+      "language": "zh",
+      "style": "youtube_long",
+      "status": "pass",
+      "cues": 541,
+      "hashes": {
+        "cues": "c068eba689e9018d810299da5601410d1f7446268d820aa08e50d9a7ca288cf2",
+        "srt": "2660ee77a2f7af6daa9ace0adb98aed74326dd676d42061a3c42498909da6994",
+        "vtt": "227ae245b9f03ae094d8c599dae967ae99635f477b1e57bc4df5442e432f5669"
+      },
+      "max_duration": 6.480000000000018,
+      "max_chars": 34,
+      "max_cps": 7.692307692307962,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-d7a26d53acc2",
+      "language": "zh",
+      "style": "standard",
+      "status": "pass",
+      "cues": 531,
+      "hashes": {
+        "cues": "1ab2d91b8e217b6145170db0733084ebe03b40517512b52ceeef97c91fdf2eb1",
+        "srt": "8935a0ae91f45aad989dcae2e8b788accd5359bfdd16ccf71327e689e569ec06",
+        "vtt": "04161e353c8abf12fd0680e70a42b562c19c78720d07fb4a1d8b537fded14d80"
+      },
+      "max_duration": 6.0,
+      "max_chars": 33,
+      "max_cps": 6.770833333333878,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-d7a26d53acc2",
+      "language": "zh",
+      "style": "short",
+      "status": "pass",
+      "cues": 671,
+      "hashes": {
+        "cues": "8eccc1711c5db65b411317b7c7f88b37dd782247ed03cf04c29e5570db06ff90",
+        "srt": "b7b65fd3e8c302e03bd9211ba62711591d715e31f750634b385d88d9002bfcbe",
+        "vtt": "b6dd20e557e4f32c4e5285b39afbf9301826748c2c7cd5f7b526009db8d4f0e0"
+      },
+      "max_duration": 4.160000000000082,
+      "max_chars": 26,
+      "max_cps": 7.692307692307962,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "zh-d7a26d53acc2",
+      "language": "zh",
+      "style": "slow_elder",
+      "status": "pass",
+      "cues": 536,
+      "hashes": {
+        "cues": "4c9ff61ef6bdf1b2fca34fda76ea69d0811ed764796d37d404217e5652d74d3c",
+        "srt": "b313bf191d0eb027554e2e1733d895b883c2ce20c162ba71e731847c8499da06",
+        "vtt": "cbb49c675527f8c6cad691e2d396357afaa8671c96331a724ae8472cce62e2e6"
+      },
+      "max_duration": 6.160000000000309,
+      "max_chars": 29,
+      "max_cps": 6.578947368421131,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "ko-c8e7092d74ae",
+      "language": "ko",
+      "style": "youtube_long",
+      "status": "pass",
+      "cues": 536,
+      "hashes": {
+        "cues": "f7f2bad0f2483f214a17577c08b90be26f1cc5865c75a0d22b6fcaff37251525",
+        "srt": "d39ea51e420bbeac93810d8b5720289f5850de64206aaa6797a7e611be2f96f1",
+        "vtt": "6a778d9fe4e5f989db72ab124394ab2457ded90c90e647c5af3f17cd9bcbf016"
+      },
+      "max_duration": 6.320000000000007,
+      "max_chars": 38,
+      "max_cps": 10.119047619048605,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "ko-c8e7092d74ae",
+      "language": "ko",
+      "style": "standard",
+      "status": "pass",
+      "cues": 509,
+      "hashes": {
+        "cues": "4b1aad8f4aa2c15117f224f3373424d33f74f326b1f707eef81d27ae37f1f4d7",
+        "srt": "1fa3d8342751478968977797e23c1b4ac53b983ce7194a491ee336d8a2fc4785",
+        "vtt": "7974123eed5e87dd5f6972ad4ad1f531da22ba99850ed5aad49c459bccbc0fd2"
+      },
+      "max_duration": 6.0,
+      "max_chars": 38,
+      "max_cps": 10.119047619048605,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "ko-c8e7092d74ae",
+      "language": "ko",
+      "style": "short",
+      "status": "pass",
+      "cues": 596,
+      "hashes": {
+        "cues": "c29e776e6cfc460bc4d03f4ba9eb94317c6908ebfd71a26966096c34f5bbe691",
+        "srt": "9a86ef76d11246116c361bf8a653655edd9d0ee21dad5048bcd8ebed362819f2",
+        "vtt": "fab03ebce64b4bd21ad85d799a1a02ef53db5fb2862d1602790d32e8f31152c6"
+      },
+      "max_duration": 4.160000000000082,
+      "max_chars": 29,
+      "max_cps": 10.22727272727278,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "ko-c8e7092d74ae",
+      "language": "ko",
+      "style": "slow_elder",
+      "status": "pass",
+      "cues": 503,
+      "hashes": {
+        "cues": "d2d2b0766bd3115c557fee03e46f569ea806ff68aec07f1409ca950c66238cd1",
+        "srt": "f1fb478d8b17618598da0136af243ddf305b4908bcd8cc90fc2f2d9d3ffb05cd",
+        "vtt": "011931fce07964e7c15804a15164f461000c77757dbc3ff1f7a39fa81f4306af"
+      },
+      "max_duration": 5.599999999999994,
+      "max_chars": 32,
+      "max_cps": 8.749999999999254,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "other_language_unchanged": true
+    },
+    {
+      "id": "en-96ebf8e24761",
+      "language": "en",
+      "style": "youtube_long",
+      "status": "pass",
+      "cues": 291,
+      "hashes": {
+        "cues": "1b64b5e6ffe7b7668a0404cfef6b390a04bfd98bbedc53cb31606e8f1ea3e232",
+        "srt": "cfe7e73ade593c7a604026965ce0fe5ab3a6ccbf0bdb9dccc5db690d32380206",
+        "vtt": "2554a05d980c8ea777cf28d1b564e23d98bd732787148fbfc77bb70295f8decc"
+      },
+      "max_duration": 4.319999999999936,
+      "max_chars": 60,
+      "max_cps": 20.0,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "matches_frozen_candidate": true
+    },
+    {
+      "id": "en-96ebf8e24761",
+      "language": "en",
+      "style": "standard",
+      "status": "pass",
+      "cues": 287,
+      "hashes": {
+        "cues": "048eeed9816057935de1a4ae01ac144a815038ed2cf380f08527e33e5bd47c28",
+        "srt": "bbb7cce156b774b12787ac161085ee0c85d302c5bea7f439ba8e6c904ed45575",
+        "vtt": "421573573d5881729875dbef78b2b080bf0c693449edfd7d1c39bea502800ac9"
+      },
+      "max_duration": 4.319999999999936,
+      "max_chars": 60,
+      "max_cps": 20.0,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0
+    },
+    {
+      "id": "en-96ebf8e24761",
+      "language": "en",
+      "style": "short",
+      "status": "pass",
+      "cues": 288,
+      "hashes": {
+        "cues": "e360e2a1ef4ae8b59258ea31c0d93c6c8f20eb2df5b23fac50f888d0653b4924",
+        "srt": "bfb804a91663d00a24112be4194986ed1e06ba623a7a4283e76d554fc4dd8d48",
+        "vtt": "05c4bf5ca413c6a7a587802e5afdb07bd59207d95939f1c4ee3dbee9eea08de8"
+      },
+      "max_duration": 4.319999999999936,
+      "max_chars": 60,
+      "max_cps": 20.0,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0
+    },
+    {
+      "id": "en-96ebf8e24761",
+      "language": "en",
+      "style": "slow_elder",
+      "status": "failed",
+      "error": "AlignmentError: 无法在现有 token 时间证据下满足字幕时长、字数和阅读速度限制"
+    },
+    {
+      "id": "en-da47bc4a61d2",
+      "language": "en",
+      "style": "youtube_long",
+      "status": "pass",
+      "cues": 649,
+      "hashes": {
+        "cues": "5e69d2a61c84e84d64aa6c98a1414b8f998ec236fa97e01b7c5bc798aecd2d62",
+        "srt": "1b8b6c1b7b30f5da3a3c7a20914739054ec2c59f6dbbbbabc80a2df62c8f6f61",
+        "vtt": "ddff62b625d702fabce354ebec17ac00d28ad439ac61c6587abf2685a39636fb"
+      },
+      "max_duration": 4.8799999999999955,
+      "max_chars": 60,
+      "max_cps": 19.758064516129114,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "matches_frozen_candidate": true
+    },
+    {
+      "id": "en-da47bc4a61d2",
+      "language": "en",
+      "style": "standard",
+      "status": "pass",
+      "cues": 593,
+      "hashes": {
+        "cues": "3541184f5e1c8ddff2cd87117d1ac660e2c1bbf47f41b074a71a0555bd72a2f1",
+        "srt": "2d000fdd7a96750b3f64b0025577e0bdfb4493c05f85da9cc3b38ee62cc495ac",
+        "vtt": "4695eeef7fe2cd5a86972742b07593765670743ad8703a99ce9b440da71247b8"
+      },
+      "max_duration": 4.8799999999999955,
+      "max_chars": 60,
+      "max_cps": 19.758064516129114,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0
+    },
+    {
+      "id": "en-da47bc4a61d2",
+      "language": "en",
+      "style": "short",
+      "status": "pass",
+      "cues": 614,
+      "hashes": {
+        "cues": "d1da41b4b5905d4fe65b1940e4653420a038b37e3fe976df7e069a0df0ee3137",
+        "srt": "841d780e2b9afd47f45c2004823fe8fd05fd4d93f2a7ce6ba23a445d3a168853",
+        "vtt": "92d1ed10f2a2d59505adab78a4f34366ef180052552c8618ce4cbe8243599443"
+      },
+      "max_duration": 4.8799999999999955,
+      "max_chars": 60,
+      "max_cps": 19.758064516129114,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0
+    },
+    {
+      "id": "en-da47bc4a61d2",
+      "language": "en",
+      "style": "slow_elder",
+      "status": "pass",
+      "cues": 552,
+      "hashes": {
+        "cues": "e3662d7dc91217d836e540b4b91bedd82b2d412fcf5c83f5fb788b57eb5458f6",
+        "srt": "2a854a24cbd8bb1b65604b62c0bd8b2b7e39124b5e5c5be7ee6a67b96725c67d",
+        "vtt": "340e915fcb4a933f783b15947cf5b24b46b803409af781fa6d6af0fd40ee5132"
+      },
+      "max_duration": 4.8799999999999955,
+      "max_chars": 60,
+      "max_cps": 17.0,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0
+    },
+    {
+      "id": "en-711bb43eb2b0",
+      "language": "en",
+      "style": "youtube_long",
+      "status": "pass",
+      "cues": 583,
+      "hashes": {
+        "cues": "cbc40ea807498f1219df897153460c5de0cf5381090584899f413a7dcd16a123",
+        "srt": "89e5f8388ed7bdba0946aa4dd838784fd70a0768108002b3f1ef36840f57abe8",
+        "vtt": "a44b6990a1e2a4ed1de1729a3881097e06f03d96a88087dd927f9b3349dff66e"
+      },
+      "max_duration": 4.7999999999999545,
+      "max_chars": 60,
+      "max_cps": 19.02173913043504,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "matches_frozen_candidate": true
+    },
+    {
+      "id": "en-711bb43eb2b0",
+      "language": "en",
+      "style": "standard",
+      "status": "pass",
+      "cues": 555,
+      "hashes": {
+        "cues": "75504b1bb058758a7f3c1e49f6f96ef5ce369654e938894d0745c8f442b92288",
+        "srt": "c60ecdc6ea70cd19c321ef042640632705e5062b8699bdde1b311e383870818b",
+        "vtt": "623136e37a80bbd514769a74bcdc961b356edea9549444f7013dd1858c3e09d3"
+      },
+      "max_duration": 4.7999999999999545,
+      "max_chars": 60,
+      "max_cps": 18.74999999999929,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0
+    },
+    {
+      "id": "en-711bb43eb2b0",
+      "language": "en",
+      "style": "short",
+      "status": "pass",
+      "cues": 569,
+      "hashes": {
+        "cues": "7538643567d0037495523ec7a3e334463d84047a56d68db9b7527800714e4ac7",
+        "srt": "f3c1d1d84d4d8bcb5feb28684e8836c946d318d089b9b7b81b6318d8021f44f9",
+        "vtt": "7c27b833ae184927b1f9dd5dd9f39da8cb7e27e15531ecfdb5396ef741117cb6"
+      },
+      "max_duration": 4.7999999999999545,
+      "max_chars": 60,
+      "max_cps": 18.74999999999929,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0
+    },
+    {
+      "id": "en-711bb43eb2b0",
+      "language": "en",
+      "style": "slow_elder",
+      "status": "pass",
+      "cues": 533,
+      "hashes": {
+        "cues": "91c591fe67b376bf8af7b30c8112cdb5f09e11c09aacef9aac91b446cddeb7d8",
+        "srt": "9c1f50b209845ffbcbc887508b29e9b28606501a20fe0e2b17acdfafdd136f4c",
+        "vtt": "b3bb91b0813f0b6f1aa9ee94ef7dce7b8b3e71a25383b7bdbd20787236a9c782"
+      },
+      "max_duration": 4.7999999999999545,
+      "max_chars": 60,
+      "max_cps": 16.96428571428622,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0
+    },
+    {
+      "id": "en-c9b85a6b4091",
+      "language": "en",
+      "style": "youtube_long",
+      "status": "pass",
+      "cues": 382,
+      "hashes": {
+        "cues": "6a3099132a3d930bfdcaea9c68aafcfab9fc921dc87c0c716c4b4d71879e6013",
+        "srt": "c72e468503f46bf2715db90f90242c79adcd5e32d4a9d14f4950ebb6d6779395",
+        "vtt": "a2c4684060b698eaa9a44d211995a2be8392d28c9df9e5201d9b1340f631f5f3"
+      },
+      "max_duration": 4.159999999999968,
+      "max_chars": 60,
+      "max_cps": 19.711538461538343,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "matches_frozen_candidate": true
+    },
+    {
+      "id": "en-c9b85a6b4091",
+      "language": "en",
+      "style": "standard",
+      "status": "pass",
+      "cues": 379,
+      "hashes": {
+        "cues": "f9b8b33a0cd325d0921eb5c734dfcadeb7c38b80bcbbdcf616cb6f7499b025eb",
+        "srt": "fdfa771487edbb4bb29798d9e202e694a5f38bec7177d379ae5b2dad5fab5660",
+        "vtt": "c18549b33eaaf284ab6107f1f82eaa6a0c9639c0bb06f5409b813dc09451aa06"
+      },
+      "max_duration": 4.159999999999968,
+      "max_chars": 60,
+      "max_cps": 19.711538461538343,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0
+    },
+    {
+      "id": "en-c9b85a6b4091",
+      "language": "en",
+      "style": "short",
+      "status": "pass",
+      "cues": 380,
+      "hashes": {
+        "cues": "8d5e9f1dcf07ce6f52b9a6c01fd1218e2ee983a36537ecd0d1b57fbeb3ed9ca0",
+        "srt": "bcc93023eafe3e8c147a6d746588f20d1212f37dd1bcf426f450596768ce4dad",
+        "vtt": "aee60863f1e5d099073dbda7443ac6845d9b2fbe1b54823d6aea5f52f0c5ee0f"
+      },
+      "max_duration": 4.159999999999968,
+      "max_chars": 60,
+      "max_cps": 19.711538461538343,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0
+    },
+    {
+      "id": "en-c9b85a6b4091",
+      "language": "en",
+      "style": "slow_elder",
+      "status": "failed",
+      "error": "AlignmentError: 无法在现有 token 时间证据下满足字幕时长、字数和阅读速度限制"
+    },
+    {
+      "id": "en-4b8ef45c3595",
+      "language": "en",
+      "style": "youtube_long",
+      "status": "pass",
+      "cues": 608,
+      "hashes": {
+        "cues": "4256572ed2a90283ffcad1d725095e5ba3665f65f69022739f63ad8789d6f140",
+        "srt": "81edfc6eaa5da3abea93721cc3d1b9b903c463dcffc04cf488c0fdfa84521626",
+        "vtt": "177c351b26bb6f31c4809c57bac163ca6aa45174409507a52e98ed72f6d195e0"
+      },
+      "max_duration": 4.8799999999999955,
+      "max_chars": 60,
+      "max_cps": 19.642857142857064,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "matches_frozen_candidate": true
+    },
+    {
+      "id": "en-4b8ef45c3595",
+      "language": "en",
+      "style": "standard",
+      "status": "pass",
+      "cues": 584,
+      "hashes": {
+        "cues": "6a19729b41a4611ce692b9ee7c60ad95f10c09bef07c3fa843ed3fbd79ada4bf",
+        "srt": "d6069a71d4e8a5aa0aa2827005612597151136f3aaed7fb729fbc03b2b2c13ad",
+        "vtt": "df2849054ed48699cd3a590add9805d0c7c901ab05b1f5b373d4f1538847e100"
+      },
+      "max_duration": 4.8799999999999955,
+      "max_chars": 60,
+      "max_cps": 19.999999999999982,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0
+    },
+    {
+      "id": "en-4b8ef45c3595",
+      "language": "en",
+      "style": "short",
+      "status": "pass",
+      "cues": 596,
+      "hashes": {
+        "cues": "8c61a9e261beb3aa102e3c2f62676f6af5296c739dfe7c2c43b6f42c4e7bd0bb",
+        "srt": "1f148447bc7d4675498c4cc56e0bf928657841d6ae6d4e1d5295d6ec65f75ad7",
+        "vtt": "93ba8cb7576f65d2e91376d41f5fc2eea6e42467027732935479b018378ff5f7"
+      },
+      "max_duration": 4.8799999999999955,
+      "max_chars": 60,
+      "max_cps": 19.642857142857064,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0
+    },
+    {
+      "id": "en-4b8ef45c3595",
+      "language": "en",
+      "style": "slow_elder",
+      "status": "pass",
+      "cues": 549,
+      "hashes": {
+        "cues": "cf15b69ff419991fcab5c9ea4fcd967001048cf65639add7195a6cc723c1e164",
+        "srt": "40db7f0db268b50378ab98e29b0d95f1f5d45743018c28f1aacf3dbbce8e6d50",
+        "vtt": "ad755514286b87a0a7879078042a309e2ca680ef44a5c0d71028c7c883b515ef"
+      },
+      "max_duration": 4.8799999999999955,
+      "max_chars": 60,
+      "max_cps": 17.0,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0
+    },
+    {
+      "id": "en-psychology-current",
+      "language": "en",
+      "style": "youtube_long",
+      "status": "pass",
+      "cues": 137,
+      "hashes": {
+        "cues": "7b2968cbd4da62ea71a74b5f8c04d3f44ae2c8fd6294477cdecd64374072e595",
+        "srt": "68e64e31e00ed8e7d70903090027fef3d86f9d19e8229768110b6b3688573c31",
+        "vtt": "90f56767c649749e13eb6beb2abc9994a73a93a994f6bec8f182e25cdfa6df19"
+      },
+      "max_duration": 4.0,
+      "max_chars": 60,
+      "max_cps": 19.932432432432428,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0,
+      "matches_frozen_candidate": true
+    },
+    {
+      "id": "en-psychology-current",
+      "language": "en",
+      "style": "standard",
+      "status": "pass",
+      "cues": 134,
+      "hashes": {
+        "cues": "0c9487cb190d08627cf939362c2a28d8ab80ad5b32f23f5a88eff904ea0b3781",
+        "srt": "2ed9d71d172f62ad186458190f9ae929a6fb00745c797d990606f3268054c060",
+        "vtt": "c4aeb2e6533217cca45dffff6feb8af4d38fe6431e3659506ef2dcdd1e126e4d"
+      },
+      "max_duration": 4.0,
+      "max_chars": 60,
+      "max_cps": 19.932432432432428,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0
+    },
+    {
+      "id": "en-psychology-current",
+      "language": "en",
+      "style": "short",
+      "status": "pass",
+      "cues": 134,
+      "hashes": {
+        "cues": "0c9487cb190d08627cf939362c2a28d8ab80ad5b32f23f5a88eff904ea0b3781",
+        "srt": "2ed9d71d172f62ad186458190f9ae929a6fb00745c797d990606f3268054c060",
+        "vtt": "c4aeb2e6533217cca45dffff6feb8af4d38fe6431e3659506ef2dcdd1e126e4d"
+      },
+      "max_duration": 4.0,
+      "max_chars": 60,
+      "max_cps": 19.932432432432428,
+      "text_exact": true,
+      "token_endpoints_exact": true,
+      "overlaps": 0
+    },
+    {
+      "id": "en-psychology-current",
+      "language": "en",
+      "style": "slow_elder",
+      "status": "failed",
+      "error": "AlignmentError: 无法在现有 token 时间证据下满足字幕时长、字数和阅读速度限制"
+    }
+  ],
+  "runtime": {
+    "service_reload": "complete",
+    "port": 7862,
+    "pid": 1319,
+    "index_http_status": 200,
+    "english_defaults": {
+      "youtube_long": {
+        "max_duration": 5.0,
+        "max_chars_total": 60
+      },
+      "standard": {
+        "max_duration": 5.0,
+        "max_chars_total": 60
+      },
+      "short": {
+        "max_duration": 5.0,
+        "max_chars_total": 60
+      },
+      "slow_elder": {
+        "max_duration": 5.0,
+        "max_chars_total": 60
+      }
+    }
+  },
+  "limits": [
+    "历史 token 时间证据回放，未重新运行 Qwen 对齐或试听；应用不改变之前实验记录中的局部退步与短字幕增加。",
+    "冻结候选文件保持不变；正式代码仅增加英语范围限定和代码排版，六份英语输出完全一致。"
+  ]
+}

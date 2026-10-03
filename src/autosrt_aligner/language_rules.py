@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import threading
+import bisect
 from functools import lru_cache
 import re
 from pathlib import Path
@@ -168,7 +169,12 @@ def _analyze(text, lang):
         }
     model = _model(lang)
 
+    known_sentence_ends = sentence_ends(text, lang) if lang == "en" else []
+
     def atom(a, b, kind, allow_comma=False):
+        first_end = bisect.bisect_right(known_sentence_ends, a)
+        if first_end < len(known_sentence_ends) and known_sentence_ends[first_end] < b:
+            return
         if b > a and not any(
             c in STRONG or (c in MID and not (allow_comma and c in ",，、"))
             for c in text[a:b]
@@ -268,6 +274,27 @@ def _analyze(text, lang):
                 b = max(t.idx + len(t), t.head.idx + len(t.head))
                 if b - a <= 80:
                     atom(a, b, "dependency_" + t.dep_)
+            if t.dep_ == "advmod" and t.head.pos_ in {"ADJ", "ADV", "ADP"}:
+                a = min(t.idx, t.head.idx)
+                b = max(t.idx + len(t), t.head.idx + len(t.head))
+                if b - a <= 40:
+                    atom(a, b, "degree_modifier")
+            if t.dep_ == "prep" and t.head.pos_ in {"VERB", "AUX", "ADJ", "ADP"}:
+                a = min(t.idx, t.head.idx)
+                b = max(t.idx + len(t), t.head.idx + len(t.head))
+                between = text[t.head.idx + len(t.head):t.idx]
+                if t.idx > t.head.idx and len(between.strip().split()) <= 2 and b - a <= 40:
+                    atom(a, b, "predicate_preposition_link")
+            if t.dep_ == "dobj" and t.pos_ == "PRON" and t.head.pos_ == "VERB":
+                a = min(t.idx, t.head.idx)
+                b = max(t.idx + len(t), t.head.idx + len(t.head))
+                if b - a <= 24:
+                    atom(a, b, "verb_pronoun_object")
+            if t.dep_ in {"pobj", "pcomp"} and t.head.pos_ == "ADP":
+                a = t.head.idx
+                b = t.idx + len(t)
+                if 0 < b - a <= 40:
+                    atom(a, b, "dependency_preposition_complement")
             if t.dep_ == "prep" and t.head.pos_ in {"NOUN", "PROPN"}:
                 objects = [x for x in t.children if x.dep_ == "pobj"]
                 if objects:
@@ -297,10 +324,28 @@ def make_boundary_map(text, lang, analysis):
     n = len(text)
     word_inside = [False] * (n + 1)
     phrase_inside = [False] * (n + 1)
+    core_inside = [False] * (n + 1)
+    core_dependencies = {
+        "det", "amod", "compound", "nummod", "poss", "aux", "auxpass",
+        "neg", "prt", "case", "fixed", "flat", "nsubj", "preposition_complement",
+    }
     for a in analysis["atoms"]:
         dest = word_inside if a["kind"] in {"word", "eojeol"} else phrase_inside
+        core = (
+            lang == "en"
+            and (
+                (
+                    a["kind"].startswith("dependency_")
+                    and a["kind"][len("dependency_"):] in core_dependencies
+                )
+                or a["kind"] == "degree_modifier"
+            )
+            and a["end"] - a["start"] <= 40
+        )
         for p in range(a["start"] + 1, a["end"]):
             dest[p] = True
+            if core:
+                core_inside[p] = True
     ws = analysis["words"]
     next_word = [None] * (n + 1)
     j = len(ws) - 1
@@ -312,6 +357,7 @@ def make_boundary_map(text, lang, analysis):
         next_word[p] = following
     return {
         "word_inside": word_inside,
+        "core_inside": core_inside,
         "phrase_inside": phrase_inside,
         "following": next_word,
     }

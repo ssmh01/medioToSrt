@@ -1,7 +1,9 @@
 import unittest
 from dataclasses import replace
+from unittest.mock import patch
 
 from autosrt_aligner.errors import AlignmentError
+from autosrt_aligner.language_rules import analyze, make_boundary_map, sentence_ends
 from autosrt_aligner.models import AlignmentToken, SubtitleCue
 from autosrt_aligner.profiles import resolve_profile
 from autosrt_aligner.quality_v2 import _segmentation_issues
@@ -24,6 +26,40 @@ def character_tokens(text, step=0.2):
 
 
 class NaturalSegmentationTests(unittest.TestCase):
+    def test_english_comparison_phrase_survives_duration_driven_cuts(self):
+        text = "He spoke rather than waiting for an answer, and then quietly left the room."
+        source = build_source_document(text, "en")
+        profile = resolve_profile("youtube_long", "en", max_duration=3.0)
+        for step in (0.12, 0.16):
+            with self.subTest(step=step):
+                cues = segment_cues(source, character_tokens(text, step), profile)
+                self.assertGreater(len(cues), 1)
+                self.assertTrue(any("rather than" in cue.text for cue in cues))
+                self.assertTrue(validate_subtitle_continuity(cues, text))
+                self.assertFalse(_segmentation_issues(source, cues, profile))
+
+    def test_english_parser_links_respect_sentence_ends_and_abbreviations(self):
+        class ParsedToken:
+            def __init__(self, text, offset):
+                self.text, self.idx = text, offset
+                self.dep_, self.pos_ = "", "PROPN"
+                self.head, self.children = self, []
+                self.i = 0
+
+            def __len__(self):
+                return len(self.text)
+
+        text = "Dr. Hall waited. They agreed."
+        tokens = [ParsedToken(word, text.index(word)) for word in ("Dr.", "Hall", "waited", "They", "agreed")]
+        tokens[0].dep_, tokens[0].head = "compound", tokens[1]
+        tokens[2].dep_, tokens[2].head = "aux", tokens[4]
+        with patch("autosrt_aligner.language_rules._model", return_value=lambda _: tokens):
+            analysis = analyze(text, "en")
+        maps = make_boundary_map(text, "en", analysis)
+        self.assertTrue(maps["phrase_inside"][text.index("Hall")])
+        self.assertEqual(sentence_ends(text, "en"), [text.index("They")])
+        self.assertFalse(maps["phrase_inside"][text.index("They")])
+
     def test_preserves_words_and_phrases_in_four_languages(self):
         cases = [
             ("zh", "我把那封信原封不动放回抽屉，后来才明白她的意思。", "原封不动"),

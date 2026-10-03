@@ -1,0 +1,118 @@
+--- a/src/autosrt_aligner/language_rules.py
++++ b/src/autosrt_aligner/language_rules.py
+@@ -2,6 +2,7 @@
+ 
+ from __future__ import annotations
+ import threading
++import bisect
+ from functools import lru_cache
+ import re
+ from pathlib import Path
+@@ -168,7 +169,12 @@
+         }
+     model = _model(lang)
+ 
++    known_sentence_ends = sentence_ends(text, lang) if lang == "en" else []
++
+     def atom(a, b, kind, allow_comma=False):
++        first_end = bisect.bisect_right(known_sentence_ends, a)
++        if first_end < len(known_sentence_ends) and known_sentence_ends[first_end] < b:
++            return
+         if b > a and not any(
+             c in STRONG or (c in MID and not (allow_comma and c in ",，、"))
+             for c in text[a:b]
+@@ -268,6 +274,27 @@
+                 b = max(t.idx + len(t), t.head.idx + len(t.head))
+                 if b - a <= 80:
+                     atom(a, b, "dependency_" + t.dep_)
++            if t.dep_ == "advmod" and t.head.pos_ in {"ADJ", "ADV", "ADP"}:
++                a = min(t.idx, t.head.idx)
++                b = max(t.idx + len(t), t.head.idx + len(t.head))
++                if b - a <= 40:
++                    atom(a, b, "degree_modifier")
++            if t.dep_ == "prep" and t.head.pos_ in {"VERB", "AUX", "ADJ", "ADP"}:
++                a = min(t.idx, t.head.idx)
++                b = max(t.idx + len(t), t.head.idx + len(t.head))
++                between = text[t.head.idx + len(t.head):t.idx]
++                if t.idx > t.head.idx and len(between.strip().split()) <= 2 and b - a <= 40:
++                    atom(a, b, "predicate_preposition_link")
++            if t.dep_ == "dobj" and t.pos_ == "PRON" and t.head.pos_ == "VERB":
++                a = min(t.idx, t.head.idx)
++                b = max(t.idx + len(t), t.head.idx + len(t.head))
++                if b - a <= 24:
++                    atom(a, b, "verb_pronoun_object")
++            if t.dep_ in {"pobj", "pcomp"} and t.head.pos_ == "ADP":
++                a = t.head.idx
++                b = t.idx + len(t)
++                if 0 < b - a <= 40:
++                    atom(a, b, "dependency_preposition_complement")
+             if t.dep_ == "prep" and t.head.pos_ in {"NOUN", "PROPN"}:
+                 objects = [x for x in t.children if x.dep_ == "pobj"]
+                 if objects:
+@@ -297,10 +324,22 @@
+     n = len(text)
+     word_inside = [False] * (n + 1)
+     phrase_inside = [False] * (n + 1)
++    core_inside = [False] * (n + 1)
++    core_dependencies = {"det", "amod", "compound", "nummod", "poss", "aux", "auxpass", "neg", "prt", "case", "fixed", "flat", "nsubj", "preposition_complement"}
+     for a in analysis["atoms"]:
+         dest = word_inside if a["kind"] in {"word", "eojeol"} else phrase_inside
++        core = (
++            lang == "en"
++            and (
++                (a["kind"].startswith("dependency_") and a["kind"][len("dependency_"):] in core_dependencies)
++                or a["kind"] == "degree_modifier"
++            )
++            and a["end"] - a["start"] <= 40
++        )
+         for p in range(a["start"] + 1, a["end"]):
+             dest[p] = True
++            if core:
++                core_inside[p] = True
+     ws = analysis["words"]
+     next_word = [None] * (n + 1)
+     j = len(ws) - 1
+@@ -312,6 +351,7 @@
+         next_word[p] = following
+     return {
+         "word_inside": word_inside,
++        "core_inside": core_inside,
+         "phrase_inside": phrase_inside,
+         "following": next_word,
+     }
+--- a/src/autosrt_aligner/segmenter_v2.py
++++ b/src/autosrt_aligner/segmenter_v2.py
+@@ -267,9 +267,9 @@
+         gap = tokens[index + 1].start - token.end if index + 1 < count else 0
+         gap_counts.append(gap_counts[-1] + int(gap >= 0.8 - 0.001))
+     target_seconds, target_chars = LANGUAGE_TARGETS[language]
+-    costs = [math.inf] * (count + 1)
++    costs = [(math.inf, math.inf, math.inf, math.inf)] * (count + 1)
+     next_end: list[int | None] = [None] * count
+-    costs[count] = 0.0
++    costs[count] = (0, 0, 0, 0.0)
+     for start in range(count - 1, -1, -1):
+         char_start = boundaries[start - 1] if start else 0
+         for end in range(start, count):
+@@ -291,7 +291,7 @@
+                 )
+                 if duration < minimum - 0.001 or not allowed[end]:
+                     continue
+-            if not math.isfinite(costs[end + 1]):
++            if not math.isfinite(costs[end + 1][0]):
+                 continue
+             if _exceeds_reading_speed_limit(
+                 text[char_start:char_end],
+@@ -332,7 +332,11 @@
+                     cost -= min(8, cost - 1)
+                 if morphology and maps["phrase_inside"][char_end] and kind == "weak":
+                     cost += 70
+-            total = cost + costs[end + 1]
++            phrase_break = int(end < count - 1 and maps["phrase_inside"][char_end])
++            incomplete_sentence = internal if kind != "sentence" else 0
++            tail = costs[end + 1]
++            core_break = int(end < count - 1 and maps["core_inside"][char_end])
++            total = (core_break + tail[0], incomplete_sentence + tail[1], phrase_break + tail[2], cost + tail[3])
+             if total < costs[start]:
+                 costs[start] = total
+                 next_end[start] = end

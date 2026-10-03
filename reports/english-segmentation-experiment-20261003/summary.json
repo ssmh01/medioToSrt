@@ -1,0 +1,1774 @@
+{
+  "created_at": "2026-10-03T16:51:05.755079+08:00",
+  "conclusion": "Historical text replay shows useful local improvements, with mixed outcomes, one reviewed regression and more short cues. The experimental candidate is not integrated into the repository or live service. Broad English superiority and playback quality are unverified.",
+  "profile": {
+    "style": "youtube_long",
+    "language": "en",
+    "min_duration": 1.2,
+    "max_duration": 5.0,
+    "max_chars_total": 60,
+    "max_chars_per_second": 20
+  },
+  "sample_counts": {
+    "historical_projects": 5,
+    "development": 3,
+    "validation": 2,
+    "latest_regression": 1
+  },
+  "history_audio_minutes": 115.35916666666667,
+  "all_audio_minutes": 121.41433333333333,
+  "history_source_characters": 117523,
+  "all_source_characters": 124292,
+  "design": {
+    "variant": "final_candidate",
+    "scope": "experimental English branch; no changes to live repository or service",
+    "grammar": [
+      "reject English dependency spans crossing true sentence ends",
+      "keep existing short core dependency preferences",
+      "add local degree modifiers, predicate/preposition links, verb/pronoun objects, and preposition/complement units; no sample-specific expression list"
+    ],
+    "selection_priorities": [
+      "1. hard constraints: original text, token timestamps, duration, characters, minimum, speed",
+      "2. minimize cuts within short core syntax units, including preposition + complement",
+      "3. minimize sentence endings mixed with unfinished next-sentence fragments",
+      "4. minimize looser phrase relation splits",
+      "5. original readability, length and duration score"
+    ],
+    "development_revision": "Text review found that avoiding verb/preposition cuts alone can shift the split to into | a nursing home. Therefore model the preposition-complement unit using its general dependency relation, and keep weaker verb-to-preposition links below sentence completeness. Freeze after development evaluation; no validation tuning."
+  },
+  "candidate_freeze": {
+    "frozen_at": "2026-10-03T16:31:54.691553+08:00",
+    "selected_variant": "final_candidate",
+    "reason": "General dependency units and sentence-aware syntax; development removed most new relation cut candidates and modestly reduced sentence remnants while preserving all hard constraints. Accepted for historical validation, not selected for deployment.",
+    "files": {
+      "final-design.json": "fd41f5afccc56bbf2ebd7625439f534afc60b9fbe46adf42e7175558cbd64279",
+      "final_candidate/src/autosrt_aligner/language_rules.py": "0689854cfabe6ed163e50756ecd84c17cb43999a51a6309a5e641492fab14cec",
+      "final_candidate/src/autosrt_aligner/segmenter_v2.py": "91a1ddb71d7abac8bf42d89ecf14de620ecf50358987dfee173b9d466825c389",
+      "final_candidate/src/autosrt_aligner/profiles.py": "caf2dac340ca733109a9cec0920307cad6beb3cb1aba3baa9aa803b86069d052"
+    },
+    "validation_policy": "No candidate code or parameter changes after this freeze; report regressions, sample effects, and constraints without hiding any unsuccessful result."
+  },
+  "pairs": [
+    {
+      "sample": {
+        "id": "en-96ebf8e24761",
+        "split": "validation",
+        "original_path": "/private/tmp/subtitle-naturalness-lab-20261003/inputs/en-96ebf8e24761/alignment.json",
+        "input_sha256": "13c56b8c0104c744d9a95127ef81a054ee418b0c3ab8b1324528292871e2bce4",
+        "frozen_path": "/private/tmp/english-segmentation-experiment-20261003/inputs/en-96ebf8e24761/alignment.json",
+        "characters": 14094,
+        "audio_duration": 758.18,
+        "source_hash": "96ebf8e24761fe171dddc60684ce345b8f4c18b21321fd544a93af0f02a44172"
+      },
+      "label": "采猎生活科普",
+      "baseline": {
+        "id": "en-96ebf8e24761",
+        "split": "validation",
+        "variant": "baseline",
+        "segmentation_seconds": 0.929604,
+        "status": "pass",
+        "metrics": {
+          "cues": 292,
+          "word_inside_cuts": 0,
+          "original_phrase_inside_cuts": 0,
+          "new_relation_cut_candidates": 8,
+          "new_relation_candidate_types": {
+            "preposition_link": 8
+          },
+          "sentence_followed_by_fragment": 1,
+          "unpunctuated_cuts": 44,
+          "under_2s": 85,
+          "avg_duration": 2.437,
+          "max_duration": 4.32,
+          "max_chars": 60,
+          "max_cps": 20.0,
+          "p95_cps": 19.397,
+          "max_gap": 0.56,
+          "text_exact": true,
+          "token_endpoints_exact": true,
+          "overlaps": 0,
+          "hard_constraint_issues": []
+        }
+      },
+      "final_candidate": {
+        "id": "en-96ebf8e24761",
+        "split": "validation",
+        "variant": "final_candidate",
+        "segmentation_seconds": 0.952751,
+        "status": "pass",
+        "metrics": {
+          "cues": 291,
+          "word_inside_cuts": 0,
+          "original_phrase_inside_cuts": 0,
+          "new_relation_cut_candidates": 0,
+          "new_relation_candidate_types": {},
+          "sentence_followed_by_fragment": 1,
+          "unpunctuated_cuts": 43,
+          "under_2s": 84,
+          "avg_duration": 2.445,
+          "max_duration": 4.32,
+          "max_chars": 60,
+          "max_cps": 20.0,
+          "p95_cps": 19.444,
+          "max_gap": 0.56,
+          "text_exact": true,
+          "token_endpoints_exact": true,
+          "overlaps": 0,
+          "hard_constraint_issues": []
+        }
+      }
+    },
+    {
+      "sample": {
+        "id": "en-da47bc4a61d2",
+        "split": "development",
+        "original_path": "/private/tmp/subtitle-naturalness-lab-20261003/inputs/en-da47bc4a61d2/alignment.json",
+        "input_sha256": "9b6a847d50d871a3e3dc77566efada6c2c12ecd8420cf2060c31be94d826fa3a",
+        "frozen_path": "/private/tmp/english-segmentation-experiment-20261003/inputs/en-da47bc4a61d2/alignment.json",
+        "characters": 28218,
+        "audio_duration": 1734.97,
+        "source_hash": "da47bc4a61d2fd6148839b0c50ced61413d45a217fec014288ad8a694f375f8b"
+      },
+      "label": "养老院家庭叙事",
+      "baseline": {
+        "id": "en-da47bc4a61d2",
+        "split": "development",
+        "variant": "baseline",
+        "segmentation_seconds": 2.794735,
+        "status": "pass",
+        "metrics": {
+          "cues": 644,
+          "word_inside_cuts": 0,
+          "original_phrase_inside_cuts": 1,
+          "new_relation_cut_candidates": 16,
+          "new_relation_candidate_types": {
+            "preposition_link": 16
+          },
+          "sentence_followed_by_fragment": 6,
+          "unpunctuated_cuts": 82,
+          "under_2s": 240,
+          "avg_duration": 2.378,
+          "max_duration": 4.88,
+          "max_chars": 60,
+          "max_cps": 19.758,
+          "p95_cps": 17.13,
+          "max_gap": 1.04,
+          "text_exact": true,
+          "token_endpoints_exact": true,
+          "overlaps": 0,
+          "hard_constraint_issues": []
+        }
+      },
+      "final_candidate": {
+        "id": "en-da47bc4a61d2",
+        "split": "development",
+        "variant": "final_candidate",
+        "segmentation_seconds": 2.905687,
+        "status": "pass",
+        "metrics": {
+          "cues": 649,
+          "word_inside_cuts": 0,
+          "original_phrase_inside_cuts": 2,
+          "new_relation_cut_candidates": 2,
+          "new_relation_candidate_types": {
+            "preposition_link": 2
+          },
+          "sentence_followed_by_fragment": 4,
+          "unpunctuated_cuts": 78,
+          "under_2s": 247,
+          "avg_duration": 2.355,
+          "max_duration": 4.88,
+          "max_chars": 60,
+          "max_cps": 19.758,
+          "p95_cps": 17.23,
+          "max_gap": 1.04,
+          "text_exact": true,
+          "token_endpoints_exact": true,
+          "overlaps": 0,
+          "hard_constraint_issues": []
+        }
+      }
+    },
+    {
+      "sample": {
+        "id": "en-711bb43eb2b0",
+        "split": "development",
+        "original_path": "/private/tmp/subtitle-naturalness-lab-20261003/inputs/en-711bb43eb2b0/alignment.json",
+        "input_sha256": "c2e7737c5b47ae31f700658a0f2da9242ac12a8f6658189e94c3506550c5835d",
+        "frozen_path": "/private/tmp/english-segmentation-experiment-20261003/inputs/en-711bb43eb2b0/alignment.json",
+        "characters": 28066,
+        "audio_duration": 1704.25,
+        "source_hash": "711bb43eb2b0031e93387812bcd085ece5bfc2d992c76b77193003daae536cc2"
+      },
+      "label": "退休金与朋友叙事",
+      "baseline": {
+        "id": "en-711bb43eb2b0",
+        "split": "development",
+        "variant": "baseline",
+        "segmentation_seconds": 1.812261,
+        "status": "pass",
+        "metrics": {
+          "cues": 580,
+          "word_inside_cuts": 0,
+          "original_phrase_inside_cuts": 2,
+          "new_relation_cut_candidates": 14,
+          "new_relation_candidate_types": {
+            "preposition_link": 12,
+            "degree_link": 2
+          },
+          "sentence_followed_by_fragment": 5,
+          "unpunctuated_cuts": 79,
+          "under_2s": 140,
+          "avg_duration": 2.619,
+          "max_duration": 4.8,
+          "max_chars": 60,
+          "max_cps": 19.375,
+          "p95_cps": 16.797,
+          "max_gap": 1.12,
+          "text_exact": true,
+          "token_endpoints_exact": true,
+          "overlaps": 0,
+          "hard_constraint_issues": []
+        }
+      },
+      "final_candidate": {
+        "id": "en-711bb43eb2b0",
+        "split": "development",
+        "variant": "final_candidate",
+        "segmentation_seconds": 1.927075,
+        "status": "pass",
+        "metrics": {
+          "cues": 583,
+          "word_inside_cuts": 0,
+          "original_phrase_inside_cuts": 4,
+          "new_relation_cut_candidates": 0,
+          "new_relation_candidate_types": {},
+          "sentence_followed_by_fragment": 3,
+          "unpunctuated_cuts": 76,
+          "under_2s": 142,
+          "avg_duration": 2.603,
+          "max_duration": 4.8,
+          "max_chars": 60,
+          "max_cps": 19.022,
+          "p95_cps": 16.827,
+          "max_gap": 1.12,
+          "text_exact": true,
+          "token_endpoints_exact": true,
+          "overlaps": 0,
+          "hard_constraint_issues": []
+        }
+      }
+    },
+    {
+      "sample": {
+        "id": "en-c9b85a6b4091",
+        "split": "validation",
+        "original_path": "/private/tmp/subtitle-naturalness-lab-20261003/inputs/en-c9b85a6b4091/alignment.json",
+        "input_sha256": "41c844a0750b1f5a77bb494b09853a43444536b4fa58933f1297d9f86e81eb93",
+        "frozen_path": "/private/tmp/english-segmentation-experiment-20261003/inputs/en-c9b85a6b4091/alignment.json",
+        "characters": 18547,
+        "audio_duration": 1015.48,
+        "source_hash": "c9b85a6b409118e128d64684334a431a3e42835df987ac435e1afcd194e5ab5b"
+      },
+      "label": "史前音乐与游戏科普",
+      "baseline": {
+        "id": "en-c9b85a6b4091",
+        "split": "validation",
+        "variant": "baseline",
+        "segmentation_seconds": 0.789171,
+        "status": "pass",
+        "metrics": {
+          "cues": 374,
+          "word_inside_cuts": 0,
+          "original_phrase_inside_cuts": 11,
+          "new_relation_cut_candidates": 21,
+          "new_relation_candidate_types": {
+            "preposition_link": 19,
+            "degree_link": 2
+          },
+          "sentence_followed_by_fragment": 4,
+          "unpunctuated_cuts": 95,
+          "under_2s": 94,
+          "avg_duration": 2.56,
+          "max_duration": 4.32,
+          "max_chars": 60,
+          "max_cps": 20.0,
+          "p95_cps": 18.75,
+          "max_gap": 0.56,
+          "text_exact": true,
+          "token_endpoints_exact": true,
+          "overlaps": 0,
+          "hard_constraint_issues": []
+        }
+      },
+      "final_candidate": {
+        "id": "en-c9b85a6b4091",
+        "split": "validation",
+        "variant": "final_candidate",
+        "segmentation_seconds": 0.837812,
+        "status": "pass",
+        "metrics": {
+          "cues": 382,
+          "word_inside_cuts": 0,
+          "original_phrase_inside_cuts": 16,
+          "new_relation_cut_candidates": 2,
+          "new_relation_candidate_types": {
+            "preposition_link": 2
+          },
+          "sentence_followed_by_fragment": 1,
+          "unpunctuated_cuts": 90,
+          "under_2s": 106,
+          "avg_duration": 2.5,
+          "max_duration": 4.16,
+          "max_chars": 60,
+          "max_cps": 19.712,
+          "p95_cps": 18.75,
+          "max_gap": 0.56,
+          "text_exact": true,
+          "token_endpoints_exact": true,
+          "overlaps": 0,
+          "hard_constraint_issues": []
+        }
+      }
+    },
+    {
+      "sample": {
+        "id": "en-4b8ef45c3595",
+        "split": "development",
+        "original_path": "/private/tmp/subtitle-naturalness-lab-20261003/inputs/en-4b8ef45c3595/alignment.json",
+        "input_sha256": "d8fd26f9bf3d40730a04343828108ec54e1246055e70c6266766e5635d270627",
+        "frozen_path": "/private/tmp/english-segmentation-experiment-20261003/inputs/en-4b8ef45c3595/alignment.json",
+        "characters": 28598,
+        "audio_duration": 1708.67,
+        "source_hash": "4b8ef45c35956bc81be89d3647749a3fbb94233ec13b51560b93daa23fae4e21"
+      },
+      "label": "家庭储蓄叙事",
+      "baseline": {
+        "id": "en-4b8ef45c3595",
+        "split": "development",
+        "variant": "baseline",
+        "segmentation_seconds": 1.838054,
+        "status": "pass",
+        "metrics": {
+          "cues": 606,
+          "word_inside_cuts": 0,
+          "original_phrase_inside_cuts": 1,
+          "new_relation_cut_candidates": 11,
+          "new_relation_candidate_types": {
+            "preposition_link": 10,
+            "degree_link": 1
+          },
+          "sentence_followed_by_fragment": 7,
+          "unpunctuated_cuts": 90,
+          "under_2s": 180,
+          "avg_duration": 2.496,
+          "max_duration": 4.88,
+          "max_chars": 60,
+          "max_cps": 19.643,
+          "p95_cps": 17.5,
+          "max_gap": 1.04,
+          "text_exact": true,
+          "token_endpoints_exact": true,
+          "overlaps": 0,
+          "hard_constraint_issues": []
+        }
+      },
+      "final_candidate": {
+        "id": "en-4b8ef45c3595",
+        "split": "development",
+        "variant": "final_candidate",
+        "segmentation_seconds": 1.950186,
+        "status": "pass",
+        "metrics": {
+          "cues": 608,
+          "word_inside_cuts": 0,
+          "original_phrase_inside_cuts": 0,
+          "new_relation_cut_candidates": 2,
+          "new_relation_candidate_types": {
+            "preposition_link": 2
+          },
+          "sentence_followed_by_fragment": 8,
+          "unpunctuated_cuts": 89,
+          "under_2s": 184,
+          "avg_duration": 2.487,
+          "max_duration": 4.88,
+          "max_chars": 60,
+          "max_cps": 19.643,
+          "p95_cps": 17.5,
+          "max_gap": 1.04,
+          "text_exact": true,
+          "token_endpoints_exact": true,
+          "overlaps": 0,
+          "hard_constraint_issues": []
+        }
+      }
+    },
+    {
+      "sample": {
+        "id": "en-psychology-current",
+        "split": "regression",
+        "original_path": "/var/folders/1p/xrf8rcyd13j0x7s13cqdxkdc0000gn/T/autosrt_web_4b00d716-a8a1-4b20-99c8-66688958356e__vj2o7ds/alignment.json",
+        "input_sha256": "e0621be2d9a72cf614461745520653ba2a01f14eeb87d09e104bbd5b3b04b5ec",
+        "frozen_path": "/private/tmp/english-segmentation-experiment-20261003/inputs/en-psychology-current/alignment.json",
+        "characters": 6769,
+        "audio_duration": 363.31,
+        "source_hash": "45d1754a66e3efb6a8594eb984807103b08dc7d02a968a1e74fb0601e13cb408"
+      },
+      "label": "当前心理学解说（回归）",
+      "baseline": {
+        "id": "en-psychology-current",
+        "split": "regression",
+        "variant": "baseline",
+        "segmentation_seconds": 0.575397,
+        "status": "pass",
+        "metrics": {
+          "cues": 136,
+          "word_inside_cuts": 0,
+          "original_phrase_inside_cuts": 0,
+          "new_relation_cut_candidates": 9,
+          "new_relation_candidate_types": {
+            "preposition_link": 8,
+            "degree_link": 1
+          },
+          "sentence_followed_by_fragment": 2,
+          "unpunctuated_cuts": 35,
+          "under_2s": 36,
+          "avg_duration": 2.494,
+          "max_duration": 4.0,
+          "max_chars": 60,
+          "max_cps": 20.0,
+          "p95_cps": 18.966,
+          "max_gap": 0.8,
+          "text_exact": true,
+          "token_endpoints_exact": true,
+          "overlaps": 0,
+          "hard_constraint_issues": []
+        }
+      },
+      "final_candidate": {
+        "id": "en-psychology-current",
+        "split": "regression",
+        "variant": "final_candidate",
+        "segmentation_seconds": 0.601453,
+        "status": "pass",
+        "metrics": {
+          "cues": 137,
+          "word_inside_cuts": 0,
+          "original_phrase_inside_cuts": 0,
+          "new_relation_cut_candidates": 0,
+          "new_relation_candidate_types": {},
+          "sentence_followed_by_fragment": 2,
+          "unpunctuated_cuts": 33,
+          "under_2s": 35,
+          "avg_duration": 2.474,
+          "max_duration": 4.0,
+          "max_chars": 60,
+          "max_cps": 19.932,
+          "p95_cps": 19.271,
+          "max_gap": 0.8,
+          "text_exact": true,
+          "token_endpoints_exact": true,
+          "overlaps": 0,
+          "hard_constraint_issues": []
+        }
+      }
+    }
+  ],
+  "aggregates": {
+    "history": {
+      "baseline": {
+        "cues": 2496,
+        "new_relation_cut_candidates": 70,
+        "sentence_followed_by_fragment": 23,
+        "under_2s": 739,
+        "original_phrase_inside_cuts": 15,
+        "unpunctuated_cuts": 390
+      },
+      "final_candidate": {
+        "cues": 2513,
+        "new_relation_cut_candidates": 6,
+        "sentence_followed_by_fragment": 17,
+        "under_2s": 763,
+        "original_phrase_inside_cuts": 22,
+        "unpunctuated_cuts": 376
+      }
+    },
+    "all": {
+      "baseline": {
+        "cues": 2632,
+        "new_relation_cut_candidates": 79,
+        "sentence_followed_by_fragment": 25,
+        "under_2s": 775,
+        "original_phrase_inside_cuts": 15,
+        "unpunctuated_cuts": 425
+      },
+      "final_candidate": {
+        "cues": 2650,
+        "new_relation_cut_candidates": 6,
+        "sentence_followed_by_fragment": 19,
+        "under_2s": 798,
+        "original_phrase_inside_cuts": 22,
+        "unpunctuated_cuts": 409
+      }
+    }
+  },
+  "review_counts": {
+    "history_fixed": {
+      "total": 40,
+      "better": 12,
+      "equal": 25,
+      "mixed": 3,
+      "worse": 0
+    },
+    "history_changed": {
+      "total": 30,
+      "better": 24,
+      "equal": 1,
+      "mixed": 4,
+      "worse": 1
+    },
+    "development_fixed": {
+      "total": 24,
+      "better": 4,
+      "equal": 19,
+      "mixed": 1,
+      "worse": 0
+    },
+    "development_changed": {
+      "total": 18,
+      "better": 15,
+      "equal": 1,
+      "mixed": 1,
+      "worse": 1
+    },
+    "validation_fixed": {
+      "total": 16,
+      "better": 8,
+      "equal": 6,
+      "mixed": 2,
+      "worse": 0
+    },
+    "validation_changed": {
+      "total": 12,
+      "better": 9,
+      "equal": 0,
+      "mixed": 3,
+      "worse": 0
+    },
+    "regression_fixed": {
+      "total": 8,
+      "better": 5,
+      "equal": 3,
+      "mixed": 0,
+      "worse": 0
+    },
+    "regression_changed": {
+      "total": 6,
+      "better": 5,
+      "equal": 0,
+      "mixed": 1,
+      "worse": 0
+    },
+    "all_fixed": {
+      "total": 48,
+      "better": 17,
+      "equal": 28,
+      "mixed": 3,
+      "worse": 0
+    },
+    "all_changed": {
+      "total": 36,
+      "better": 29,
+      "equal": 1,
+      "mixed": 5,
+      "worse": 1
+    }
+  },
+  "review_protocol": {
+    "fixed_windows_per_sample": 8,
+    "fixed_selection_seed": 2026100307,
+    "changed_windows_per_sample": 6,
+    "changed_selection_seed": 2026100311,
+    "label_shuffle_seed": 2026100323,
+    "reviewer": "Same assistant that designed candidate; A/B labels shuffled before text review, judgments recorded before decoding. This is self-review, not independent human review.",
+    "review_decisions_sha256": "7627d0783ca69d9be7bcf601b8d348a3f3be43745675f59de64d1ea1c989221c",
+    "limitations": [
+      "Historical validation texts were viewed before this turn; not an unseen holdout.",
+      "Changed windows are enriched for changes and may overlap fixed windows; their win count is not a general effect rate.",
+      "One cue of adjacent context is included at each window edge, so rendered changes can occur outside the nominal source window.",
+      "No audio listening, video playback, realignment or paid model request.",
+      "Automatic dependency indicators are proxies with parser errors; they do not measure semantic error rates."
+    ]
+  },
+  "review_decoded": [
+    {
+      "id": "R001",
+      "preferred_label": "equal",
+      "reason": "两版在所选段落完全一致。",
+      "window_id": "en-96ebf8e24761-fixed-001",
+      "sample": "en-96ebf8e24761",
+      "split": "validation",
+      "kind": "fixed",
+      "candidate_label": "B",
+      "changed": false,
+      "outcome": "equal"
+    },
+    {
+      "id": "R002",
+      "preferred_label": "B",
+      "reason": "保留 who came after 的从句单位。",
+      "window_id": "en-96ebf8e24761-fixed-002",
+      "sample": "en-96ebf8e24761",
+      "split": "validation",
+      "kind": "fixed",
+      "candidate_label": "B",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R003",
+      "preferred_label": "mixed",
+      "reason": "保留 burning in 和 sitting around，但新增 water is | good 的谓语拆分。",
+      "window_id": "en-96ebf8e24761-fixed-003",
+      "sample": "en-96ebf8e24761",
+      "split": "validation",
+      "kind": "fixed",
+      "candidate_label": "B",
+      "changed": true,
+      "outcome": "mixed"
+    },
+    {
+      "id": "R004",
+      "preferred_label": "equal",
+      "reason": "名词修饰与目的短语均可拆分；收益不够明确，且 B 留下 1.28 秒尾段。",
+      "window_id": "en-96ebf8e24761-fixed-004",
+      "sample": "en-96ebf8e24761",
+      "split": "validation",
+      "kind": "fixed",
+      "candidate_label": "B",
+      "changed": true,
+      "outcome": "equal"
+    },
+    {
+      "id": "R005",
+      "preferred_label": "B",
+      "reason": "条件与主句分开，nobody owes you 保持完整。",
+      "window_id": "en-96ebf8e24761-fixed-005",
+      "sample": "en-96ebf8e24761",
+      "split": "validation",
+      "kind": "fixed",
+      "candidate_label": "B",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R006",
+      "preferred_label": "A",
+      "reason": "more than 保持完整；另一版把 more 留在末尾。",
+      "window_id": "en-96ebf8e24761-fixed-006",
+      "sample": "en-96ebf8e24761",
+      "split": "validation",
+      "kind": "fixed",
+      "candidate_label": "A",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R007",
+      "preferred_label": "equal",
+      "reason": "两版在所选段落完全一致。",
+      "window_id": "en-96ebf8e24761-fixed-007",
+      "sample": "en-96ebf8e24761",
+      "split": "validation",
+      "kind": "fixed",
+      "candidate_label": "A",
+      "changed": false,
+      "outcome": "equal"
+    },
+    {
+      "id": "R008",
+      "preferred_label": "equal",
+      "reason": "两版在所选段落完全一致。",
+      "window_id": "en-96ebf8e24761-fixed-008",
+      "sample": "en-96ebf8e24761",
+      "split": "validation",
+      "kind": "fixed",
+      "candidate_label": "B",
+      "changed": false,
+      "outcome": "equal"
+    },
+    {
+      "id": "R009",
+      "preferred_label": "equal",
+      "reason": "两版在所选段落完全一致。",
+      "window_id": "en-da47bc4a61d2-fixed-024",
+      "sample": "en-da47bc4a61d2",
+      "split": "development",
+      "kind": "fixed",
+      "candidate_label": "A",
+      "changed": false,
+      "outcome": "equal"
+    },
+    {
+      "id": "R010",
+      "preferred_label": "equal",
+      "reason": "两版在所选段落完全一致。",
+      "window_id": "en-da47bc4a61d2-fixed-025",
+      "sample": "en-da47bc4a61d2",
+      "split": "development",
+      "kind": "fixed",
+      "candidate_label": "A",
+      "changed": false,
+      "outcome": "equal"
+    },
+    {
+      "id": "R011",
+      "preferred_label": "equal",
+      "reason": "两版在所选段落完全一致。",
+      "window_id": "en-da47bc4a61d2-fixed-026",
+      "sample": "en-da47bc4a61d2",
+      "split": "development",
+      "kind": "fixed",
+      "candidate_label": "A",
+      "changed": false,
+      "outcome": "equal"
+    },
+    {
+      "id": "R012",
+      "preferred_label": "equal",
+      "reason": "两版在所选段落完全一致。",
+      "window_id": "en-da47bc4a61d2-fixed-027",
+      "sample": "en-da47bc4a61d2",
+      "split": "development",
+      "kind": "fixed",
+      "candidate_label": "B",
+      "changed": false,
+      "outcome": "equal"
+    },
+    {
+      "id": "R013",
+      "preferred_label": "mixed",
+      "reason": "请求的 if 从句更完整，但 engine | running 比 engine running | for 更悬空。",
+      "window_id": "en-da47bc4a61d2-fixed-028",
+      "sample": "en-da47bc4a61d2",
+      "split": "development",
+      "kind": "fixed",
+      "candidate_label": "A",
+      "changed": true,
+      "outcome": "mixed"
+    },
+    {
+      "id": "R014",
+      "preferred_label": "A",
+      "reason": "put her dad in a home 完整，后续 and 引出第二动作。",
+      "window_id": "en-da47bc4a61d2-fixed-029",
+      "sample": "en-da47bc4a61d2",
+      "split": "development",
+      "kind": "fixed",
+      "candidate_label": "A",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R015",
+      "preferred_label": "equal",
+      "reason": "两版在所选段落完全一致。",
+      "window_id": "en-da47bc4a61d2-fixed-030",
+      "sample": "en-da47bc4a61d2",
+      "split": "development",
+      "kind": "fixed",
+      "candidate_label": "A",
+      "changed": false,
+      "outcome": "equal"
+    },
+    {
+      "id": "R016",
+      "preferred_label": "equal",
+      "reason": "两版在所选段落完全一致。",
+      "window_id": "en-da47bc4a61d2-fixed-031",
+      "sample": "en-da47bc4a61d2",
+      "split": "development",
+      "kind": "fixed",
+      "candidate_label": "B",
+      "changed": false,
+      "outcome": "equal"
+    },
+    {
+      "id": "R017",
+      "preferred_label": "equal",
+      "reason": "两版在所选段落完全一致。",
+      "window_id": "en-711bb43eb2b0-fixed-052",
+      "sample": "en-711bb43eb2b0",
+      "split": "development",
+      "kind": "fixed",
+      "candidate_label": "A",
+      "changed": false,
+      "outcome": "equal"
+    },
+    {
+      "id": "R018",
+      "preferred_label": "A",
+      "reason": "完整地点从句后在逗号分开；two-bedroom condo 也保持完整。",
+      "window_id": "en-711bb43eb2b0-fixed-053",
+      "sample": "en-711bb43eb2b0",
+      "split": "development",
+      "kind": "fixed",
+      "candidate_label": "A",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R019",
+      "preferred_label": "equal",
+      "reason": "两版在所选段落完全一致。",
+      "window_id": "en-711bb43eb2b0-fixed-054",
+      "sample": "en-711bb43eb2b0",
+      "split": "development",
+      "kind": "fixed",
+      "candidate_label": "B",
+      "changed": false,
+      "outcome": "equal"
+    },
+    {
+      "id": "R020",
+      "preferred_label": "equal",
+      "reason": "两版在所选段落完全一致。",
+      "window_id": "en-711bb43eb2b0-fixed-055",
+      "sample": "en-711bb43eb2b0",
+      "split": "development",
+      "kind": "fixed",
+      "candidate_label": "A",
+      "changed": false,
+      "outcome": "equal"
+    },
+    {
+      "id": "R021",
+      "preferred_label": "A",
+      "reason": "amounts to 保持完整；另一版把 to 放在下一条开头。",
+      "window_id": "en-711bb43eb2b0-fixed-056",
+      "sample": "en-711bb43eb2b0",
+      "split": "development",
+      "kind": "fixed",
+      "candidate_label": "A",
+      "changed": false,
+      "outcome": "better"
+    },
+    {
+      "id": "R022",
+      "preferred_label": "equal",
+      "reason": "两版在所选段落完全一致。",
+      "window_id": "en-711bb43eb2b0-fixed-057",
+      "sample": "en-711bb43eb2b0",
+      "split": "development",
+      "kind": "fixed",
+      "candidate_label": "B",
+      "changed": false,
+      "outcome": "equal"
+    },
+    {
+      "id": "R023",
+      "preferred_label": "equal",
+      "reason": "两版在所选段落完全一致。",
+      "window_id": "en-711bb43eb2b0-fixed-058",
+      "sample": "en-711bb43eb2b0",
+      "split": "development",
+      "kind": "fixed",
+      "candidate_label": "B",
+      "changed": false,
+      "outcome": "equal"
+    },
+    {
+      "id": "R024",
+      "preferred_label": "equal",
+      "reason": "两版在所选段落完全一致。",
+      "window_id": "en-711bb43eb2b0-fixed-059",
+      "sample": "en-711bb43eb2b0",
+      "split": "development",
+      "kind": "fixed",
+      "candidate_label": "A",
+      "changed": false,
+      "outcome": "equal"
+    },
+    {
+      "id": "R025",
+      "preferred_label": "equal",
+      "reason": "两版在所选段落完全一致。",
+      "window_id": "en-c9b85a6b4091-fixed-087",
+      "sample": "en-c9b85a6b4091",
+      "split": "validation",
+      "kind": "fixed",
+      "candidate_label": "A",
+      "changed": false,
+      "outcome": "equal"
+    },
+    {
+      "id": "R026",
+      "preferred_label": "B",
+      "reason": "collapsed exhausted into the mud 单独成段，动作与落点完整。",
+      "window_id": "en-c9b85a6b4091-fixed-088",
+      "sample": "en-c9b85a6b4091",
+      "split": "validation",
+      "kind": "fixed",
+      "candidate_label": "B",
+      "changed": false,
+      "outcome": "better"
+    },
+    {
+      "id": "R027",
+      "preferred_label": "A",
+      "reason": "lives under constant survival stress 保持完整。",
+      "window_id": "en-c9b85a6b4091-fixed-089",
+      "sample": "en-c9b85a6b4091",
+      "split": "validation",
+      "kind": "fixed",
+      "candidate_label": "A",
+      "changed": false,
+      "outcome": "better"
+    },
+    {
+      "id": "R028",
+      "preferred_label": "B",
+      "reason": "blow off steam 保持完整，另一版拆开 off 与 steam。",
+      "window_id": "en-c9b85a6b4091-fixed-090",
+      "sample": "en-c9b85a6b4091",
+      "split": "validation",
+      "kind": "fixed",
+      "candidate_label": "B",
+      "changed": false,
+      "outcome": "better"
+    },
+    {
+      "id": "R029",
+      "preferred_label": "equal",
+      "reason": "主体选定段落相同；可见差别位于窗口边缘，未据此判定优劣。",
+      "window_id": "en-c9b85a6b4091-fixed-091",
+      "sample": "en-c9b85a6b4091",
+      "split": "validation",
+      "kind": "fixed",
+      "candidate_label": "B",
+      "changed": false,
+      "outcome": "equal"
+    },
+    {
+      "id": "R030",
+      "preferred_label": "B",
+      "reason": "made of 材料说明完整，另一版把 made 留在上一条。",
+      "window_id": "en-c9b85a6b4091-fixed-092",
+      "sample": "en-c9b85a6b4091",
+      "split": "validation",
+      "kind": "fixed",
+      "candidate_label": "B",
+      "changed": false,
+      "outcome": "better"
+    },
+    {
+      "id": "R031",
+      "preferred_label": "mixed",
+      "reason": "移除了 They became 残片，并保留 teeth and bones，但新片段较短且句首前部仍跨从句。",
+      "window_id": "en-c9b85a6b4091-fixed-093",
+      "sample": "en-c9b85a6b4091",
+      "split": "validation",
+      "kind": "fixed",
+      "candidate_label": "B",
+      "changed": true,
+      "outcome": "mixed"
+    },
+    {
+      "id": "R032",
+      "preferred_label": "B",
+      "reason": "suffer from、rather than 完整，枚举也在逗号后切分。",
+      "window_id": "en-c9b85a6b4091-fixed-094",
+      "sample": "en-c9b85a6b4091",
+      "split": "validation",
+      "kind": "fixed",
+      "candidate_label": "B",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R033",
+      "preferred_label": "equal",
+      "reason": "两版在所选段落完全一致。",
+      "window_id": "en-4b8ef45c3595-fixed-119",
+      "sample": "en-4b8ef45c3595",
+      "split": "development",
+      "kind": "fixed",
+      "candidate_label": "B",
+      "changed": false,
+      "outcome": "equal"
+    },
+    {
+      "id": "R034",
+      "preferred_label": "equal",
+      "reason": "两版在所选段落完全一致。",
+      "window_id": "en-4b8ef45c3595-fixed-120",
+      "sample": "en-4b8ef45c3595",
+      "split": "development",
+      "kind": "fixed",
+      "candidate_label": "B",
+      "changed": false,
+      "outcome": "equal"
+    },
+    {
+      "id": "R035",
+      "preferred_label": "equal",
+      "reason": "两版在所选段落完全一致。",
+      "window_id": "en-4b8ef45c3595-fixed-121",
+      "sample": "en-4b8ef45c3595",
+      "split": "development",
+      "kind": "fixed",
+      "candidate_label": "B",
+      "changed": false,
+      "outcome": "equal"
+    },
+    {
+      "id": "R036",
+      "preferred_label": "equal",
+      "reason": "两版在所选段落完全一致。",
+      "window_id": "en-4b8ef45c3595-fixed-122",
+      "sample": "en-4b8ef45c3595",
+      "split": "development",
+      "kind": "fixed",
+      "candidate_label": "A",
+      "changed": false,
+      "outcome": "equal"
+    },
+    {
+      "id": "R037",
+      "preferred_label": "equal",
+      "reason": "两版在所选段落完全一致。",
+      "window_id": "en-4b8ef45c3595-fixed-123",
+      "sample": "en-4b8ef45c3595",
+      "split": "development",
+      "kind": "fixed",
+      "candidate_label": "A",
+      "changed": false,
+      "outcome": "equal"
+    },
+    {
+      "id": "R038",
+      "preferred_label": "equal",
+      "reason": "两版在所选段落完全一致。",
+      "window_id": "en-4b8ef45c3595-fixed-124",
+      "sample": "en-4b8ef45c3595",
+      "split": "development",
+      "kind": "fixed",
+      "candidate_label": "B",
+      "changed": false,
+      "outcome": "equal"
+    },
+    {
+      "id": "R039",
+      "preferred_label": "A",
+      "reason": "what it was for 完整；另一版只把 for 留到下一条。",
+      "window_id": "en-4b8ef45c3595-fixed-125",
+      "sample": "en-4b8ef45c3595",
+      "split": "development",
+      "kind": "fixed",
+      "candidate_label": "A",
+      "changed": false,
+      "outcome": "better"
+    },
+    {
+      "id": "R040",
+      "preferred_label": "equal",
+      "reason": "两版在所选段落完全一致。",
+      "window_id": "en-4b8ef45c3595-fixed-126",
+      "sample": "en-4b8ef45c3595",
+      "split": "development",
+      "kind": "fixed",
+      "candidate_label": "B",
+      "changed": false,
+      "outcome": "equal"
+    },
+    {
+      "id": "R041",
+      "preferred_label": "B",
+      "reason": "linked with 和 love at first sight 保持完整，实验背景在逗号后切分。",
+      "window_id": "en-psychology-current-fixed-143",
+      "sample": "en-psychology-current",
+      "split": "regression",
+      "kind": "fixed",
+      "candidate_label": "B",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R042",
+      "preferred_label": "B",
+      "reason": "falling in love 与 committing to 均保持完整；跨句连接仍存在。",
+      "window_id": "en-psychology-current-fixed-144",
+      "sample": "en-psychology-current",
+      "split": "regression",
+      "kind": "fixed",
+      "candidate_label": "B",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R043",
+      "preferred_label": "A",
+      "reason": "主语与谓语分开、vasopressin 同位说明单独成段更自然。",
+      "window_id": "en-psychology-current-fixed-145",
+      "sample": "en-psychology-current",
+      "split": "regression",
+      "kind": "fixed",
+      "candidate_label": "A",
+      "changed": false,
+      "outcome": "better"
+    },
+    {
+      "id": "R044",
+      "preferred_label": "equal",
+      "reason": "两版在所选段落完全一致。",
+      "window_id": "en-psychology-current-fixed-146",
+      "sample": "en-psychology-current",
+      "split": "regression",
+      "kind": "fixed",
+      "candidate_label": "B",
+      "changed": false,
+      "outcome": "equal"
+    },
+    {
+      "id": "R045",
+      "preferred_label": "A",
+      "reason": "dull, repetitive, and emotionally flat 整个条件枚举保持完整。",
+      "window_id": "en-psychology-current-fixed-147",
+      "sample": "en-psychology-current",
+      "split": "regression",
+      "kind": "fixed",
+      "candidate_label": "A",
+      "changed": false,
+      "outcome": "better"
+    },
+    {
+      "id": "R046",
+      "preferred_label": "B",
+      "reason": "rather than 与 to interpret friendliness 保持完整。",
+      "window_id": "en-psychology-current-fixed-148",
+      "sample": "en-psychology-current",
+      "split": "regression",
+      "kind": "fixed",
+      "candidate_label": "B",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R047",
+      "preferred_label": "equal",
+      "reason": "两版在所选段落完全一致。",
+      "window_id": "en-psychology-current-fixed-149",
+      "sample": "en-psychology-current",
+      "split": "regression",
+      "kind": "fixed",
+      "candidate_label": "A",
+      "changed": false,
+      "outcome": "equal"
+    },
+    {
+      "id": "R048",
+      "preferred_label": "equal",
+      "reason": "两版在所选段落完全一致。",
+      "window_id": "en-psychology-current-fixed-150",
+      "sample": "en-psychology-current",
+      "split": "regression",
+      "kind": "fixed",
+      "candidate_label": "A",
+      "changed": false,
+      "outcome": "equal"
+    },
+    {
+      "id": "R049",
+      "preferred_label": "B",
+      "reason": "buried in the ground 完整，另一版拆开 buried 与 in。",
+      "window_id": "en-96ebf8e24761-changed-009",
+      "sample": "en-96ebf8e24761",
+      "split": "validation",
+      "kind": "changed",
+      "candidate_label": "B",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R050",
+      "preferred_label": "mixed",
+      "reason": "B 完整分开 Instead 新句，但拆开 faster | than；A 保留比较却拆开 always | will be。",
+      "window_id": "en-96ebf8e24761-changed-013",
+      "sample": "en-96ebf8e24761",
+      "split": "validation",
+      "kind": "changed",
+      "candidate_label": "A",
+      "changed": true,
+      "outcome": "mixed"
+    },
+    {
+      "id": "R051",
+      "preferred_label": "B",
+      "reason": "条件与主句分开，nobody owes you 保持完整。",
+      "window_id": "en-96ebf8e24761-changed-019",
+      "sample": "en-96ebf8e24761",
+      "split": "validation",
+      "kind": "changed",
+      "candidate_label": "B",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R052",
+      "preferred_label": "A",
+      "reason": "collected across decades 独立修饰单位，另一版拆开 collected 与 across。",
+      "window_id": "en-96ebf8e24761-changed-020",
+      "sample": "en-96ebf8e24761",
+      "split": "validation",
+      "kind": "changed",
+      "candidate_label": "A",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R053",
+      "preferred_label": "B",
+      "reason": "more than 比较结构完整。",
+      "window_id": "en-96ebf8e24761-changed-021",
+      "sample": "en-96ebf8e24761",
+      "split": "validation",
+      "kind": "changed",
+      "candidate_label": "B",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R054",
+      "preferred_label": "B",
+      "reason": "句子按主语、谓语划分，normal for 的关系完整。",
+      "window_id": "en-96ebf8e24761-changed-022",
+      "sample": "en-96ebf8e24761",
+      "split": "validation",
+      "kind": "changed",
+      "candidate_label": "B",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R055",
+      "preferred_label": "B",
+      "reason": "does not start in 与 riding with me 都保留完整。",
+      "window_id": "en-da47bc4a61d2-changed-034",
+      "sample": "en-da47bc4a61d2",
+      "split": "development",
+      "kind": "changed",
+      "candidate_label": "B",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R056",
+      "preferred_label": "B",
+      "reason": "put them in a clear plastic bag 完整，后续 written 修饰可分开。",
+      "window_id": "en-da47bc4a61d2-changed-035",
+      "sample": "en-da47bc4a61d2",
+      "split": "development",
+      "kind": "changed",
+      "candidate_label": "B",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R057",
+      "preferred_label": "B",
+      "reason": "you are in 保持完整；另一版将 in 独立留到下条。",
+      "window_id": "en-da47bc4a61d2-changed-037",
+      "sample": "en-da47bc4a61d2",
+      "split": "development",
+      "kind": "changed",
+      "candidate_label": "B",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R058",
+      "preferred_label": "B",
+      "reason": "came out with the papers 和 swings over the bed 完整，在逗号后分开。",
+      "window_id": "en-da47bc4a61d2-changed-041",
+      "sample": "en-da47bc4a61d2",
+      "split": "development",
+      "kind": "changed",
+      "candidate_label": "B",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R059",
+      "preferred_label": "B",
+      "reason": "sat up in his bed 完整，后接并列动作。",
+      "window_id": "en-da47bc4a61d2-changed-049",
+      "sample": "en-da47bc4a61d2",
+      "split": "development",
+      "kind": "changed",
+      "candidate_label": "B",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R060",
+      "preferred_label": "B",
+      "reason": "地址枚举完整、stop at the pharmacy 后在 because 前切分。",
+      "window_id": "en-da47bc4a61d2-changed-050",
+      "sample": "en-da47bc4a61d2",
+      "split": "development",
+      "kind": "changed",
+      "candidate_label": "B",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R061",
+      "preferred_label": "B",
+      "reason": "Everybody goes home 是完整短句；looks at 后续单位完整。",
+      "window_id": "en-711bb43eb2b0-changed-068",
+      "sample": "en-711bb43eb2b0",
+      "split": "development",
+      "kind": "changed",
+      "candidate_label": "B",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R062",
+      "preferred_label": "A",
+      "reason": "完整句后接 and 的独立动作；另一版 in my head 与后续动作混合。",
+      "window_id": "en-711bb43eb2b0-changed-069",
+      "sample": "en-711bb43eb2b0",
+      "split": "development",
+      "kind": "changed",
+      "candidate_label": "A",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R063",
+      "preferred_label": "B",
+      "reason": "在完整句结束后另起 Then，去除了句尾的时间状语跨句混合。",
+      "window_id": "en-711bb43eb2b0-changed-072",
+      "sample": "en-711bb43eb2b0",
+      "split": "development",
+      "kind": "changed",
+      "candidate_label": "A",
+      "changed": true,
+      "outcome": "worse"
+    },
+    {
+      "id": "R064",
+      "preferred_label": "A",
+      "reason": "条件从句完整，另一版把 in my head 及 been at 分开。",
+      "window_id": "en-711bb43eb2b0-changed-073",
+      "sample": "en-711bb43eb2b0",
+      "split": "development",
+      "kind": "changed",
+      "candidate_label": "A",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R065",
+      "preferred_label": "B",
+      "reason": "各个 Not 的枚举单位分别完整呈现。",
+      "window_id": "en-711bb43eb2b0-changed-079",
+      "sample": "en-711bb43eb2b0",
+      "split": "development",
+      "kind": "changed",
+      "candidate_label": "B",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R066",
+      "preferred_label": "B",
+      "reason": "I feel sick about it. I do. 两个完整句组合，If 另起更自然。",
+      "window_id": "en-711bb43eb2b0-changed-081",
+      "sample": "en-711bb43eb2b0",
+      "split": "development",
+      "kind": "changed",
+      "candidate_label": "B",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R067",
+      "preferred_label": "A",
+      "reason": "lives under 的状态单位完整。",
+      "window_id": "en-c9b85a6b4091-changed-100",
+      "sample": "en-c9b85a6b4091",
+      "split": "validation",
+      "kind": "changed",
+      "candidate_label": "A",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R068",
+      "preferred_label": "B",
+      "reason": "blow off steam 不再拆开。",
+      "window_id": "en-c9b85a6b4091-changed-103",
+      "sample": "en-c9b85a6b4091",
+      "split": "validation",
+      "kind": "changed",
+      "candidate_label": "B",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R069",
+      "preferred_label": "A",
+      "reason": "spent years 后切分，living with 的单位完整；另一版 living | with 被拆开。",
+      "window_id": "en-c9b85a6b4091-changed-104",
+      "sample": "en-c9b85a6b4091",
+      "split": "validation",
+      "kind": "changed",
+      "candidate_label": "A",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R070",
+      "preferred_label": "mixed",
+      "reason": "两版都把新句的一部分接在旧句结尾，没有明确净改善。",
+      "window_id": "en-c9b85a6b4091-changed-107",
+      "sample": "en-c9b85a6b4091",
+      "split": "validation",
+      "kind": "changed",
+      "candidate_label": "A",
+      "changed": true,
+      "outcome": "mixed"
+    },
+    {
+      "id": "R071",
+      "preferred_label": "A",
+      "reason": "prevented anyone from turning into a tyrant 条件完整，另一版拆开 anyone 与 from。",
+      "window_id": "en-c9b85a6b4091-changed-110",
+      "sample": "en-c9b85a6b4091",
+      "split": "validation",
+      "kind": "changed",
+      "candidate_label": "A",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R072",
+      "preferred_label": "mixed",
+      "reason": "B 保留 teeth and bones，但拆开 devastating 与 painful disease，并将病名尾部与下一句合并；收益与问题同时存在。",
+      "window_id": "en-c9b85a6b4091-changed-113",
+      "sample": "en-c9b85a6b4091",
+      "split": "validation",
+      "kind": "changed",
+      "candidate_label": "B",
+      "changed": true,
+      "outcome": "mixed"
+    },
+    {
+      "id": "R073",
+      "preferred_label": "mixed",
+      "reason": "一版拆开 happen to，另一版拆开 nothing like，属于错误转移。",
+      "window_id": "en-4b8ef45c3595-changed-128",
+      "sample": "en-4b8ef45c3595",
+      "split": "development",
+      "kind": "changed",
+      "candidate_label": "B",
+      "changed": true,
+      "outcome": "mixed"
+    },
+    {
+      "id": "R074",
+      "preferred_label": "B",
+      "reason": "并列动作分开，writes one line in a notebook 保持完整。",
+      "window_id": "en-4b8ef45c3595-changed-130",
+      "sample": "en-4b8ef45c3595",
+      "split": "development",
+      "kind": "changed",
+      "candidate_label": "B",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R075",
+      "preferred_label": "B",
+      "reason": "out of his garage 完整，另一版拆开 out 与 of。",
+      "window_id": "en-4b8ef45c3595-changed-131",
+      "sample": "en-4b8ef45c3595",
+      "split": "development",
+      "kind": "changed",
+      "candidate_label": "B",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R076",
+      "preferred_label": "B",
+      "reason": "完整主语后切分，had somebody 的谓语单位完整。",
+      "window_id": "en-4b8ef45c3595-changed-136",
+      "sample": "en-4b8ef45c3595",
+      "split": "development",
+      "kind": "changed",
+      "candidate_label": "B",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R077",
+      "preferred_label": "B",
+      "reason": "what it was for 完整，另一版单独留 for。",
+      "window_id": "en-4b8ef45c3595-changed-138",
+      "sample": "en-4b8ef45c3595",
+      "split": "development",
+      "kind": "changed",
+      "candidate_label": "B",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R078",
+      "preferred_label": "equal",
+      "reason": "时间状语、身体状态状语均可分开；未见明确净收益。",
+      "window_id": "en-4b8ef45c3595-changed-141",
+      "sample": "en-4b8ef45c3595",
+      "split": "development",
+      "kind": "changed",
+      "candidate_label": "B",
+      "changed": true,
+      "outcome": "equal"
+    },
+    {
+      "id": "R079",
+      "preferred_label": "A",
+      "reason": "linked with 与 love at first sight 完整。",
+      "window_id": "en-psychology-current-changed-151",
+      "sample": "en-psychology-current",
+      "split": "regression",
+      "kind": "changed",
+      "candidate_label": "A",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R080",
+      "preferred_label": "B",
+      "reason": "love at first sight、compared to 都更完整；短尾段仍保留。",
+      "window_id": "en-psychology-current-changed-152",
+      "sample": "en-psychology-current",
+      "split": "regression",
+      "kind": "changed",
+      "candidate_label": "B",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R081",
+      "preferred_label": "A",
+      "reason": "falling in love 与 committing to 完整。",
+      "window_id": "en-psychology-current-changed-153",
+      "sample": "en-psychology-current",
+      "split": "regression",
+      "kind": "changed",
+      "candidate_label": "A",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R082",
+      "preferred_label": "A",
+      "reason": "主语、谓语、同位语的划分更自然。",
+      "window_id": "en-psychology-current-changed-154",
+      "sample": "en-psychology-current",
+      "split": "regression",
+      "kind": "changed",
+      "candidate_label": "A",
+      "changed": true,
+      "outcome": "better"
+    },
+    {
+      "id": "R083",
+      "preferred_label": "mixed",
+      "reason": "第一条件枚举更完整，但第二句出现 demanding | and stressful 的枚举重排，净收益不明确。",
+      "window_id": "en-psychology-current-changed-155",
+      "sample": "en-psychology-current",
+      "split": "regression",
+      "kind": "changed",
+      "candidate_label": "B",
+      "changed": true,
+      "outcome": "mixed"
+    },
+    {
+      "id": "R084",
+      "preferred_label": "A",
+      "reason": "rather than 不再拆开。",
+      "window_id": "en-psychology-current-changed-156",
+      "sample": "en-psychology-current",
+      "split": "regression",
+      "kind": "changed",
+      "candidate_label": "A",
+      "changed": true,
+      "outcome": "better"
+    }
+  ],
+  "development_variants": [
+    {
+      "variant": "baseline",
+      "label": "现行切分",
+      "cues": 1830,
+      "new_relation_cut_candidates": 41,
+      "sentence_followed_by_fragment": 18,
+      "under_2s": 560,
+      "original_phrase_inside_cuts": 4,
+      "unpunctuated_cuts": 251
+    },
+    {
+      "variant": "grammar",
+      "label": "只补充句法关系",
+      "cues": 1836,
+      "new_relation_cut_candidates": 0,
+      "sentence_followed_by_fragment": 22,
+      "under_2s": 573,
+      "original_phrase_inside_cuts": 5,
+      "unpunctuated_cuts": 242
+    },
+    {
+      "variant": "grammar_sentence",
+      "label": "补充关系并增加句尾残片罚分",
+      "cues": 1837,
+      "new_relation_cut_candidates": 2,
+      "sentence_followed_by_fragment": 17,
+      "under_2s": 576,
+      "original_phrase_inside_cuts": 7,
+      "unpunctuated_cuts": 242
+    },
+    {
+      "variant": "grammar_priority",
+      "label": "所有短语保护优先",
+      "cues": 1836,
+      "new_relation_cut_candidates": 0,
+      "sentence_followed_by_fragment": 23,
+      "under_2s": 573,
+      "original_phrase_inside_cuts": 2,
+      "unpunctuated_cuts": 244
+    },
+    {
+      "variant": "sentence_priority",
+      "label": "句界完整优先",
+      "cues": 1837,
+      "new_relation_cut_candidates": 2,
+      "sentence_followed_by_fragment": 13,
+      "under_2s": 571,
+      "original_phrase_inside_cuts": 9,
+      "unpunctuated_cuts": 242
+    },
+    {
+      "variant": "balanced_priority",
+      "label": "句界加权平衡",
+      "cues": 1836,
+      "new_relation_cut_candidates": 0,
+      "sentence_followed_by_fragment": 23,
+      "under_2s": 573,
+      "original_phrase_inside_cuts": 2,
+      "unpunctuated_cuts": 244
+    },
+    {
+      "variant": "sentence_aware",
+      "label": "句界内建模 + 原加权分数",
+      "cues": 1836,
+      "new_relation_cut_candidates": 0,
+      "sentence_followed_by_fragment": 22,
+      "under_2s": 573,
+      "original_phrase_inside_cuts": 3,
+      "unpunctuated_cuts": 244
+    },
+    {
+      "variant": "core_priority",
+      "label": "只提升短核心短语优先级",
+      "cues": 1836,
+      "new_relation_cut_candidates": 0,
+      "sentence_followed_by_fragment": 21,
+      "under_2s": 572,
+      "original_phrase_inside_cuts": 4,
+      "unpunctuated_cuts": 242
+    },
+    {
+      "variant": "final_candidate",
+      "label": "最终冻结：短核心 > 句界完整 > 宽短语 > 原分数",
+      "cues": 1840,
+      "new_relation_cut_candidates": 4,
+      "sentence_followed_by_fragment": 15,
+      "under_2s": 573,
+      "original_phrase_inside_cuts": 6,
+      "unpunctuated_cuts": 243
+    }
+  ],
+  "benchmark": {
+    "baseline": {
+      "variant": "baseline",
+      "sample": "en-da47bc4a61d2",
+      "audio_seconds": 1734.97,
+      "warmup_seconds": 2.7146079159574583,
+      "warm_repeats_seconds": [
+        2.0904075829312205,
+        2.1318429579259828,
+        2.1088827500352636
+      ],
+      "warm_median_seconds": 2.1088827500352636,
+      "repeat_outputs_identical": true,
+      "scope": "Single long English source; sequential isolated processes; same local runtime; excludes audio alignment, API calls, export and evaluation; no general hardware performance claim."
+    },
+    "final_candidate": {
+      "variant": "final_candidate",
+      "sample": "en-da47bc4a61d2",
+      "audio_seconds": 1734.97,
+      "warmup_seconds": 2.7100533329648897,
+      "warm_repeats_seconds": [
+        2.2849041670560837,
+        2.320832125027664,
+        2.3641876250039786
+      ],
+      "warm_median_seconds": 2.320832125027664,
+      "repeat_outputs_identical": true,
+      "scope": "Single long English source; sequential isolated processes; same local runtime; excludes audio alignment, API calls, export and evaluation; no general hardware performance claim."
+    },
+    "median_ratio": 1.1005031574130217,
+    "median_extra_seconds": 0.2119493749924004
+  },
+  "runtime": {
+    "python": "3.12.14 (main, Aug 25 2026, 13:50:33) [Clang 22.1.3 ]",
+    "platform": "macOS-26.1-arm64-arm-64bit",
+    "spacy": "3.8.16",
+    "en_core_web_sm": "3.8.0"
+  },
+  "integrity": {
+    "frozen_inputs_match_manifest": true,
+    "candidate_matches_prevalidation_freeze": true,
+    "repository_algorithm_and_profile_unchanged_during_experiment": true,
+    "all_12_final_comparisons_pass": true,
+    "live_english_defaults": {
+      "youtube_long": {
+        "max_duration": 5.0,
+        "max_chars_total": 60
+      },
+      "standard": {
+        "max_duration": 5.0,
+        "max_chars_total": 60
+      },
+      "short": {
+        "max_duration": 5.0,
+        "max_chars_total": 60
+      },
+      "slow_elder": {
+        "max_duration": 5.0,
+        "max_chars_total": 60
+      }
+    },
+    "repository_status_before": " M README.md\n M src/autosrt_aligner/profiles.py\n M tests/test_web_app.py\n",
+    "repository_status_at_delivery": " M README.md\n M src/autosrt_aligner/profiles.py\n M tests/test_web_app.py\n?? reports/english-segmentation-experiment-20261003/\n"
+  },
+  "application_update": {
+    "status": "applied_to_english",
+    "validation_record": "../english-segmentation-application-20261003.json",
+    "historical_experiment_records_preserved": true
+  }
+}

@@ -1,0 +1,13 @@
+﻿sample,label,split,variant,status,segmentation_seconds,cues,word_inside_cuts,original_phrase_inside_cuts,new_relation_cut_candidates,new_relation_candidate_types,sentence_followed_by_fragment,unpunctuated_cuts,under_2s,avg_duration,max_duration,max_chars,max_cps,p95_cps,max_gap,text_exact,token_endpoints_exact,overlaps,hard_constraint_issues
+en-96ebf8e24761,采猎生活科普,validation,baseline,pass,0.929604,292,0,0,8,{'preposition_link': 8},1,44,85,2.437,4.32,60,20.0,19.397,0.56,True,True,0,[]
+en-96ebf8e24761,采猎生活科普,validation,final_candidate,pass,0.952751,291,0,0,0,{},1,43,84,2.445,4.32,60,20.0,19.444,0.56,True,True,0,[]
+en-da47bc4a61d2,养老院家庭叙事,development,baseline,pass,2.794735,644,0,1,16,{'preposition_link': 16},6,82,240,2.378,4.88,60,19.758,17.13,1.04,True,True,0,[]
+en-da47bc4a61d2,养老院家庭叙事,development,final_candidate,pass,2.905687,649,0,2,2,{'preposition_link': 2},4,78,247,2.355,4.88,60,19.758,17.23,1.04,True,True,0,[]
+en-711bb43eb2b0,退休金与朋友叙事,development,baseline,pass,1.812261,580,0,2,14,"{'preposition_link': 12, 'degree_link': 2}",5,79,140,2.619,4.8,60,19.375,16.797,1.12,True,True,0,[]
+en-711bb43eb2b0,退休金与朋友叙事,development,final_candidate,pass,1.927075,583,0,4,0,{},3,76,142,2.603,4.8,60,19.022,16.827,1.12,True,True,0,[]
+en-c9b85a6b4091,史前音乐与游戏科普,validation,baseline,pass,0.789171,374,0,11,21,"{'preposition_link': 19, 'degree_link': 2}",4,95,94,2.56,4.32,60,20.0,18.75,0.56,True,True,0,[]
+en-c9b85a6b4091,史前音乐与游戏科普,validation,final_candidate,pass,0.837812,382,0,16,2,{'preposition_link': 2},1,90,106,2.5,4.16,60,19.712,18.75,0.56,True,True,0,[]
+en-4b8ef45c3595,家庭储蓄叙事,development,baseline,pass,1.838054,606,0,1,11,"{'preposition_link': 10, 'degree_link': 1}",7,90,180,2.496,4.88,60,19.643,17.5,1.04,True,True,0,[]
+en-4b8ef45c3595,家庭储蓄叙事,development,final_candidate,pass,1.950186,608,0,0,2,{'preposition_link': 2},8,89,184,2.487,4.88,60,19.643,17.5,1.04,True,True,0,[]
+en-psychology-current,当前心理学解说（回归）,regression,baseline,pass,0.575397,136,0,0,9,"{'preposition_link': 8, 'degree_link': 1}",2,35,36,2.494,4.0,60,20.0,18.966,0.8,True,True,0,[]
+en-psychology-current,当前心理学解说（回归）,regression,final_candidate,pass,0.601453,137,0,0,0,{},2,33,35,2.474,4.0,60,19.932,19.271,0.8,True,True,0,[]

@@ -267,9 +267,9 @@ def _best_path(
         gap = tokens[index + 1].start - token.end if index + 1 < count else 0
         gap_counts.append(gap_counts[-1] + int(gap >= 0.8 - 0.001))
     target_seconds, target_chars = LANGUAGE_TARGETS[language]
-    costs = [math.inf] * (count + 1)
+    costs = [(math.inf, math.inf, math.inf, math.inf)] * (count + 1)
     next_end: list[int | None] = [None] * count
-    costs[count] = 0.0
+    costs[count] = (0, 0, 0, 0.0)
     for start in range(count - 1, -1, -1):
         char_start = boundaries[start - 1] if start else 0
         for end in range(start, count):
@@ -291,7 +291,7 @@ def _best_path(
                 )
                 if duration < minimum - 0.001 or not allowed[end]:
                     continue
-            if not math.isfinite(costs[end + 1]):
+            if not math.isfinite(costs[end + 1][0]):
                 continue
             if _exceeds_reading_speed_limit(
                 text[char_start:char_end],
@@ -332,7 +332,20 @@ def _best_path(
                     cost -= min(8, cost - 1)
                 if morphology and maps["phrase_inside"][char_end] and kind == "weak":
                     cost += 70
-            total = cost + costs[end + 1]
+            tail = costs[end + 1]
+            if language == "en":
+                # English paths prioritize core syntax, complete thoughts, then phrases.
+                core_break = int(end < count - 1 and maps["core_inside"][char_end])
+                incomplete_sentence = internal if kind != "sentence" else 0
+                phrase_break = int(end < count - 1 and maps["phrase_inside"][char_end])
+                total = (
+                    core_break + tail[0],
+                    incomplete_sentence + tail[1],
+                    phrase_break + tail[2],
+                    cost + tail[3],
+                )
+            else:
+                total = (0, 0, 0, cost + tail[3])
             if total < costs[start]:
                 costs[start] = total
                 next_end[start] = end
