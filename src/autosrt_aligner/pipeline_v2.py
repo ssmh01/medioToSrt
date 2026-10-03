@@ -62,6 +62,7 @@ def run_alignment_job_v2(
     preserve_punctuation: bool | None = None,
     engine: AlignmentEngine | None = None,
     alignment_engine: str | None = None,
+    max_chars_total: int | None = None,
 ) -> JobResult:
     """Run the V2 pipeline without timestamp invention or silent text mapping."""
 
@@ -78,6 +79,7 @@ def run_alignment_job_v2(
         min_duration=min_duration,
         max_duration=max_duration,
         max_chars_per_line=max_chars_per_line,
+        max_chars_total=max_chars_total,
     )
     source = build_source_document(script_text, language, preserve_punctuation=True)
     logs.append(f"V2 文案字符数: {len(source.display_text)}")
@@ -125,7 +127,7 @@ def run_alignment_job_v2(
         logs.append("V2 时间证据存在问题: " + "；".join(reconcile.issues))
 
     try:
-        cues = segment_cues(source, tokens, profile)
+        cues = segment_cues(source, tokens, profile, audio_duration=audio_duration)
         if audio_duration and audio_duration > 0 and cues:
             terminal_cue = cues[-1]
             if terminal_cue.end < audio_duration:

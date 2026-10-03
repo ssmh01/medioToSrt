@@ -418,6 +418,16 @@ select {
     line-height: 1.5;
 }
 
+.preset-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+    color: var(--muted);
+    font-size: 13px;
+}
+
 .primary-action {
     display: flex;
     align-items: center;

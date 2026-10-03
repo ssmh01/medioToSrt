@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
+import bisect
 import math
 import re
 from dataclasses import replace
 
 from .errors import AlignmentError
 from .models import AlignmentToken, SourceDocument, SubtitleCue, SubtitleProfile
+from .language_rules import (
+    analyze,
+    boundary_kind,
+    display_boundaries,
+    lexical_penalty,
+    make_boundary_map,
+    sentence_ends,
+)
 from .profiles import language_group
 from .text import (
     is_nonspoken_alignment_char,
@@ -26,12 +35,16 @@ EN_BAD_EDGE = {"a", "an", "the", "of", "to", "in", "on", "at", "for", "and", "or
 MAX_MERGED_INTERNAL_GAP_SECONDS = 0.8
 TERMINAL_JA_CPS_TOLERANCE = 1.0
 TERMINAL_CUE_MIN_EVIDENCE_SECONDS = 0.5
+LANGUAGE_TARGETS = {
+    "zh": (3.0, 22), "ja": (3.0, 23), "ko": (3.1, 27), "en": (3.3, 62),
+}
 
 
 def segment_cues(
     source: SourceDocument,
     tokens: list[AlignmentToken],
     profile: SubtitleProfile,
+    audio_duration: float | None = None,
 ) -> list[SubtitleCue]:
     """Select cue boundaries from existing token timestamps only."""
 
@@ -42,24 +55,21 @@ def segment_cues(
     if not ordered:
         raise AlignmentError("没有可用于语义切分的对齐 token")
 
-    path = _best_path(source, ordered, profile)
+    analysis = analyze(source.display_text, source.language)
+    boundaries = display_boundaries(source.display_text, ordered)
+    path = _best_path(source, ordered, profile, analysis, boundaries, audio_duration)
     cues: list[SubtitleCue] = []
     char_start = 0
     token_start = 0
     for token_end in path:
-        next_start_char = (
-            ordered[token_end + 1].start_char
-            if token_end + 1 < len(ordered)
-            else len(source.display_text)
-        )
-        char_end = max(char_start, next_start_char or len(source.display_text))
+        char_end = boundaries[token_end]
         text = render_display_segment(source.display_text[char_start:char_end])
         if text:
             cues.append(
                 SubtitleCue(
                     index=len(cues) + 1,
-                    start=max(0.0, ordered[token_start].start),
-                    end=max(ordered[token_start].start + 0.1, ordered[token_end].end),
+                    start=ordered[token_start].start,
+                    end=ordered[token_end].end,
                     text=text,
                     start_char=char_start,
                     end_char=char_end,
@@ -68,8 +78,6 @@ def segment_cues(
         char_start = char_end
         token_start = token_end + 1
 
-    cues = _repair_korean_timing(cues, source.language, profile)
-    cues = _merge_korean_fast_cues(source, cues, profile)
     if not cues or not validate_subtitle_continuity(cues, source.display_text):
         raise AlignmentError("语义切分结果无法连续覆盖原文")
     return cues
@@ -190,61 +198,149 @@ def _merge_korean_fast_cues(
     return [replace(cue, index=index + 1) for index, cue in enumerate(repaired)]
 
 
+def structural_ends(text: str) -> list[int]:
+    """Ends of paragraph-separated sentences and standalone quotations."""
+    result = []
+    for match in re.finditer(r"\n+", text):
+        left = text[: match.start()].rstrip()
+        if not left or left[-1] not in '。！？!? .」』”’"':
+            continue
+        end = match.end()
+        while end < len(text) and text[end].isspace():
+            end += 1
+        if end < len(text):
+            result.append(end)
+    return result
+
+
+def utterance_ends(text: str, language: str) -> set[int]:
+    return set(sentence_ends(text, language)) | set(structural_ends(text))
+
+
+def minimum_cue_duration(
+    start_char: int,
+    end_char: int,
+    profile: SubtitleProfile,
+    complete_ends: set[int],
+) -> float:
+    """A short complete utterance may stand alone; fragments use the normal limit."""
+    if (start_char == 0 or start_char in complete_ends) and end_char in complete_ends:
+        return (
+            profile.min_complete_duration
+            if profile.min_complete_duration is not None
+            else profile.min_duration
+        )
+    return max(1.2, profile.min_duration)
+
+
 def _best_path(
     source: SourceDocument,
     tokens: list[AlignmentToken],
     profile: SubtitleProfile,
+    analysis: dict,
+    boundaries: list[int],
+    audio_duration: float | None,
 ) -> list[int]:
+    text = source.display_text
+    language = source.language
     count = len(tokens)
+    maps = make_boundary_map(text, language, analysis)
+    morphology = language != "ko"
+    kinds = [boundary_kind(text, end, language) for end in boundaries]
+    allowed = [_is_safe_boundary(text, end, language) for end in boundaries]
+    if morphology:
+        allowed = [
+            safe and not maps["word_inside"][end]
+            for safe, end in zip(allowed, boundaries)
+        ]
+    char_counts = [0]
+    for char in text:
+        char_counts.append(char_counts[-1] + int(not char.isspace()))
+    complete_ends = utterance_ends(text, language)
+    strong = sorted(complete_ends)
+    for index, end in enumerate(boundaries):
+        if end in complete_ends:
+            kinds[index] = "sentence"
+    critical = structural_ends(text)
+    gap_counts = [0]
+    for index, token in enumerate(tokens):
+        gap = tokens[index + 1].start - token.end if index + 1 < count else 0
+        gap_counts.append(gap_counts[-1] + int(gap >= 0.8 - 0.001))
+    target_seconds, target_chars = LANGUAGE_TARGETS[language]
     costs = [math.inf] * (count + 1)
     next_end: list[int | None] = [None] * count
     costs[count] = 0.0
-
     for start in range(count - 1, -1, -1):
-        start_char = tokens[start].start_char or 0
+        char_start = boundaries[start - 1] if start else 0
         for end in range(start, count):
             duration = tokens[end].end - tokens[start].start
-            if end < count - 1 and duration < profile.min_duration:
-                continue
-            if duration > profile.max_duration + 0.001:
+            effective_duration = duration
+            if end == count - 1 and audio_duration is not None:
+                effective_duration = max(tokens[end].end, audio_duration) - tokens[start].start
+            if effective_duration > profile.max_duration + 0.001:
                 break
-            char_end = tokens[end + 1].start_char if end + 1 < count else len(source.display_text)
-            if char_end is None:
-                char_end = len(source.display_text)
-            if end < count - 1 and not _is_safe_boundary(source.display_text, char_end, source.language):
+            char_end = boundaries[end]
+            chars = char_counts[char_end] - char_counts[char_start]
+            if chars > profile.max_chars_total:
+                break
+            if duration <= 0:
                 continue
+            if end < count - 1:
+                minimum = minimum_cue_duration(
+                    char_start, char_end, profile, complete_ends
+                )
+                if duration < minimum - 0.001 or not allowed[end]:
+                    continue
             if not math.isfinite(costs[end + 1]):
                 continue
-            text = source.display_text[start_char:char_end]
             if _exceeds_reading_speed_limit(
-                text,
+                text[char_start:char_end],
                 duration,
                 profile,
-                source.language,
+                language,
                 is_terminal=end == count - 1,
             ):
                 continue
-            candidate_cost = _boundary_cost(
-                source.display_text,
-                char_end,
-                text,
-                duration,
-                profile,
-                source.language,
-                tokens[end].end,
-                tokens[end + 1].start - tokens[end].end if end + 1 < count else 0.0,
+            kind = kinds[end]
+            internal = bisect.bisect_left(strong, char_end) - bisect.bisect_right(
+                strong, char_start
             )
-            total = candidate_cost + costs[end + 1]
+            # Positive per-cue costs balance complete thoughts against reading length.
+            cost = (
+                12
+                + 0.6 * (duration - target_seconds) ** 2
+                + 8 * max(0, 2.0 - duration) ** 2
+            )
+            cost += 3.0 * ((chars - target_chars) / target_chars) ** 2
+            if kind == "clause":
+                cost += 5
+                if text[:char_end].rstrip().endswith("、"):
+                    cost += 20
+                if morphology and maps["phrase_inside"][char_end]:
+                    cost += 40
+            elif kind == "weak":
+                cost += lexical_penalty(language, char_end, maps) if morphology else 30
+            cost += internal * (45 if kind == "sentence" else 90)
+            cost += (
+                bisect.bisect_left(critical, char_end)
+                - bisect.bisect_right(critical, char_start)
+            ) * 60
+            cost += (gap_counts[end] - gap_counts[start]) * 110
+            if end < count - 1:
+                gap = tokens[end + 1].start - tokens[end].end
+                if kind == "weak" and gap >= 0.45:
+                    cost -= min(8, cost - 1)
+                if morphology and maps["phrase_inside"][char_end] and kind == "weak":
+                    cost += 70
+            total = cost + costs[end + 1]
             if total < costs[start]:
                 costs[start] = total
                 next_end[start] = end
-
     if next_end[0] is None:
-        # A very short or unusual sample may have no ideal-duration boundary;
-        # keep the complete evidence span rather than modifying timestamps.
-        return [count - 1]
-
-    path: list[int] = []
+        raise AlignmentError(
+            "无法在现有 token 时间证据下满足字幕时长、字数和阅读速度限制"
+        )
+    path = []
     start = 0
     while start < count:
         end = next_end[start]
@@ -253,48 +349,6 @@ def _best_path(
         path.append(end)
         start = end + 1
     return path
-
-
-def _boundary_cost(
-    display_text: str,
-    char_end: int,
-    text: str,
-    duration: float,
-    profile: SubtitleProfile,
-    language: str,
-    token_end: float,
-    next_gap: float,
-) -> float:
-    compact = "".join(text.split())
-    chars = len(compact)
-    target_chars = max(4.0, profile.max_chars_total * 0.72)
-    cost = abs(chars - target_chars) * 0.45
-    ideal_mid = (profile.ideal_min_duration + profile.ideal_max_duration) / 2
-    cost += abs(duration - ideal_mid) * 2.0
-    previous = _previous_visible(display_text, char_end)
-    following = _next_visible(display_text, char_end)
-    if previous in STRONG_PUNCT:
-        cost -= 48
-    elif previous in MID_PUNCT:
-        cost -= 22
-    if next_gap >= 0.45:
-        cost -= 20
-    elif next_gap >= 0.2:
-        cost -= 8
-    if _has_boundary_space(display_text, char_end):
-        cost -= 10
-    if previous in OPEN_QUOTES or following in CLOSE_QUOTES:
-        cost += 42
-    if _has_bad_edge(compact, language):
-        cost += 28
-    if chars > profile.max_chars_total:
-        cost += 80 + (chars - profile.max_chars_total) * 4
-    if duration < profile.min_duration and char_end < len(display_text):
-        cost += 90
-    # Keep the value visible in debugging without making it a timing edit.
-    _ = token_end
-    return cost
-
 
 def _is_safe_boundary(text: str, char_end: int, language: str) -> bool:
     group = language_group(language)

@@ -28,6 +28,7 @@ def fake_run_alignment_job(
     max_chars_per_line=None,
     generate_vtt=True,
     engine=None,
+    max_chars_total=None,
 ):
     out_dir = Path(output_dir or tempfile.mkdtemp(prefix="autosrt_test_"))
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -126,6 +127,50 @@ class WebAppTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertIn("不支持的语言参数", response.json()["detail"])
+
+    def test_options_include_all_language_style_combinations(self):
+        presets = self.client.get("/api/options").json()["profile_defaults"]
+        expected_caps = {
+            "zh": (34, 34, 26, 29), "ja": (34, 34, 26, 29),
+            "ko": (38, 38, 29, 32), "en": (84, 84, 65, 84),
+        }
+        for language, caps in expected_caps.items():
+            for style, cap in zip(("youtube_long", "standard", "short", "slow_elder"), caps):
+                with self.subTest(language=language, style=style):
+                    self.assertEqual(presets[language][style]["max_chars_total"], cap)
+        self.assertEqual(presets["en"]["youtube_long"]["max_duration"], 6.0)
+        self.assertEqual(presets["ja"]["short"]["max_duration"], 4.2)
+        self.assertEqual(presets["ko"]["slow_elder"]["min_duration"], 1.5)
+
+    def test_create_job_resolves_omitted_settings_and_keeps_custom_character_cap(self):
+        calls = []
+
+        def capture_job(**kwargs):
+            calls.append(kwargs)
+            return fake_run_alignment_job(**kwargs)
+
+        web_app.run_alignment_job = capture_job
+        for style, extra, expected in (
+            ("short", {}, (1.0, 4.2, 26)),
+            ("slow_elder", {}, (1.5, 7.0, 29)),
+            ("youtube_long", {"max_chars_total": "12", "max_duration": "4.8"}, (1.2, 4.8, 12)),
+        ):
+            response = self.client.post(
+                "/api/jobs", data={"script_text": "测试字幕。", "language": "zh", "subtitle_profile": style, **extra},
+                files={"audio_file": ("audio.mp3", b"audio", "audio/mpeg")},
+            )
+            self.assertEqual(response.status_code, 200)
+            self._wait_for_job(response.json()["job_id"])
+            call = calls[-1]
+            self.assertEqual((call["min_duration"], call["max_duration"], call["max_chars_total"]), expected)
+
+    def test_create_job_rejects_nonpositive_character_cap(self):
+        response = self.client.post(
+            "/api/jobs", data={"script_text": "测试字幕。", "language": "zh", "max_chars_total": "0"},
+            files={"audio_file": ("audio.mp3", b"audio", "audio/mpeg")},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("最大字符数", response.json()["detail"])
 
     def test_create_job_status_and_download(self):
         response = self.client.post(

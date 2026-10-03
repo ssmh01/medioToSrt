@@ -1,0 +1,417 @@
+{
+  "date": "2026-10-03",
+  "baseline_commit": "19c816d55fe558e2175196f43b864483beaa7292",
+  "unit_tests": {
+    "passed": 115,
+    "failed": 0
+  },
+  "post_alignment_replay": {
+    "histories": 21,
+    "languages": {
+      "ko": 3,
+      "ja": 4,
+      "en": 5,
+      "zh": 9
+    },
+    "configurations": 84,
+    "passed": 84,
+    "long_video_exact_v6_cue_srt_vtt_matches": 21
+  },
+  "full_pipeline_replay": {
+    "histories": 20,
+    "configurations": 80,
+    "passed": 80,
+    "excluded_raw_token_replay": "en-4b8ef45c3595 stores normalized currency tokens; checked from saved source offsets in post-alignment replay"
+  },
+  "browser_tests": {
+    "language_style_combinations": 16,
+    "passed": true,
+    "custom_inputs": "pass",
+    "restore_defaults": "pass",
+    "steppers": "pass",
+    "required_fields": "pass"
+  },
+  "reading_quality_evidence": {
+    "fixed_windows": 48,
+    "better": 39,
+    "equal": 9,
+    "scope": "YouTube profile; iterative text review, no independent blind test or listening review"
+  },
+  "integration_findings": [
+    {
+      "issue": "English elder preset had no valid path at 72 chars and 17 chars/sec",
+      "tested_alternatives": [
+        "lower minimum duration: blocked",
+        "longer max duration: blocked",
+        "84 chars at unchanged 17 chars/sec: pass"
+      ],
+      "final": "English elder cap 84; other language caps unchanged"
+    },
+    {
+      "issue": "Short subtitle terminal extension exceeded 4.2 seconds",
+      "final": "Cut selection checks the known terminal audio duration; timestamps continue to use existing evidence"
+    }
+  ],
+  "presets": {
+    "zh": {
+      "youtube_long": {
+        "key": "youtube_long",
+        "label": "YouTube 长视频",
+        "min_duration": 1.2,
+        "max_duration": 6.5,
+        "ideal_min_duration": 1.6,
+        "ideal_max_duration": 4.8,
+        "max_chars_per_line": 18,
+        "max_chars_total": 34,
+        "max_chars_per_second": 8.5,
+        "gap_seconds": 0.08,
+        "min_complete_duration": 0.8
+      },
+      "standard": {
+        "key": "standard",
+        "label": "标准字幕",
+        "min_duration": 1.2,
+        "max_duration": 6.0,
+        "ideal_min_duration": 1.6,
+        "ideal_max_duration": 4.8,
+        "max_chars_per_line": 18,
+        "max_chars_total": 34,
+        "max_chars_per_second": 8.5,
+        "gap_seconds": 0.08,
+        "min_complete_duration": 1.2
+      },
+      "short": {
+        "key": "short",
+        "label": "短字幕",
+        "min_duration": 1.0,
+        "max_duration": 4.2,
+        "ideal_min_duration": 1.4,
+        "ideal_max_duration": 4.2,
+        "max_chars_per_line": 14,
+        "max_chars_total": 26,
+        "max_chars_per_second": 8.5,
+        "gap_seconds": 0.08,
+        "min_complete_duration": 1.0
+      },
+      "slow_elder": {
+        "key": "slow_elder",
+        "label": "老年频道慢节奏朗读字幕",
+        "min_duration": 1.5,
+        "max_duration": 7.0,
+        "ideal_min_duration": 1.9,
+        "ideal_max_duration": 4.8,
+        "max_chars_per_line": 16,
+        "max_chars_total": 29,
+        "max_chars_per_second": 7.225,
+        "gap_seconds": 0.08,
+        "min_complete_duration": 1.5
+      }
+    },
+    "ja": {
+      "youtube_long": {
+        "key": "youtube_long",
+        "label": "YouTube 长视频",
+        "min_duration": 1.2,
+        "max_duration": 6.5,
+        "ideal_min_duration": 1.6,
+        "ideal_max_duration": 4.8,
+        "max_chars_per_line": 17,
+        "max_chars_total": 34,
+        "max_chars_per_second": 12.0,
+        "gap_seconds": 0.08,
+        "min_complete_duration": 0.8
+      },
+      "standard": {
+        "key": "standard",
+        "label": "标准字幕",
+        "min_duration": 1.2,
+        "max_duration": 6.0,
+        "ideal_min_duration": 1.6,
+        "ideal_max_duration": 4.8,
+        "max_chars_per_line": 17,
+        "max_chars_total": 34,
+        "max_chars_per_second": 12.0,
+        "gap_seconds": 0.08,
+        "min_complete_duration": 1.2
+      },
+      "short": {
+        "key": "short",
+        "label": "短字幕",
+        "min_duration": 1.0,
+        "max_duration": 4.2,
+        "ideal_min_duration": 1.4,
+        "ideal_max_duration": 4.2,
+        "max_chars_per_line": 13,
+        "max_chars_total": 26,
+        "max_chars_per_second": 12.0,
+        "gap_seconds": 0.08,
+        "min_complete_duration": 1.0
+      },
+      "slow_elder": {
+        "key": "slow_elder",
+        "label": "老年频道慢节奏朗读字幕",
+        "min_duration": 1.5,
+        "max_duration": 7.0,
+        "ideal_min_duration": 1.9,
+        "ideal_max_duration": 4.8,
+        "max_chars_per_line": 15,
+        "max_chars_total": 29,
+        "max_chars_per_second": 10.2,
+        "gap_seconds": 0.08,
+        "min_complete_duration": 1.5
+      }
+    },
+    "ko": {
+      "youtube_long": {
+        "key": "youtube_long",
+        "label": "YouTube 长视频",
+        "min_duration": 1.2,
+        "max_duration": 6.5,
+        "ideal_min_duration": 1.6,
+        "ideal_max_duration": 4.8,
+        "max_chars_per_line": 20,
+        "max_chars_total": 38,
+        "max_chars_per_second": 10.5,
+        "gap_seconds": 0.08,
+        "min_complete_duration": 0.8
+      },
+      "standard": {
+        "key": "standard",
+        "label": "标准字幕",
+        "min_duration": 1.2,
+        "max_duration": 6.0,
+        "ideal_min_duration": 1.6,
+        "ideal_max_duration": 4.8,
+        "max_chars_per_line": 20,
+        "max_chars_total": 38,
+        "max_chars_per_second": 10.5,
+        "gap_seconds": 0.08,
+        "min_complete_duration": 1.2
+      },
+      "short": {
+        "key": "short",
+        "label": "短字幕",
+        "min_duration": 1.0,
+        "max_duration": 4.2,
+        "ideal_min_duration": 1.4,
+        "ideal_max_duration": 4.2,
+        "max_chars_per_line": 16,
+        "max_chars_total": 29,
+        "max_chars_per_second": 10.5,
+        "gap_seconds": 0.08,
+        "min_complete_duration": 1.0
+      },
+      "slow_elder": {
+        "key": "slow_elder",
+        "label": "老年频道慢节奏朗读字幕",
+        "min_duration": 1.5,
+        "max_duration": 7.0,
+        "ideal_min_duration": 1.9,
+        "ideal_max_duration": 4.8,
+        "max_chars_per_line": 18,
+        "max_chars_total": 32,
+        "max_chars_per_second": 8.924999999999999,
+        "gap_seconds": 0.08,
+        "min_complete_duration": 1.5
+      }
+    },
+    "en": {
+      "youtube_long": {
+        "key": "youtube_long",
+        "label": "YouTube 长视频",
+        "min_duration": 1.2,
+        "max_duration": 6.0,
+        "ideal_min_duration": 1.6,
+        "ideal_max_duration": 4.8,
+        "max_chars_per_line": 42,
+        "max_chars_total": 84,
+        "max_chars_per_second": 20.0,
+        "gap_seconds": 0.08,
+        "min_complete_duration": 0.8
+      },
+      "standard": {
+        "key": "standard",
+        "label": "标准字幕",
+        "min_duration": 1.2,
+        "max_duration": 6.0,
+        "ideal_min_duration": 1.6,
+        "ideal_max_duration": 4.8,
+        "max_chars_per_line": 42,
+        "max_chars_total": 84,
+        "max_chars_per_second": 20.0,
+        "gap_seconds": 0.08,
+        "min_complete_duration": 1.2
+      },
+      "short": {
+        "key": "short",
+        "label": "短字幕",
+        "min_duration": 1.0,
+        "max_duration": 4.2,
+        "ideal_min_duration": 1.4,
+        "ideal_max_duration": 4.2,
+        "max_chars_per_line": 34,
+        "max_chars_total": 65,
+        "max_chars_per_second": 20.0,
+        "gap_seconds": 0.08,
+        "min_complete_duration": 1.0
+      },
+      "slow_elder": {
+        "key": "slow_elder",
+        "label": "老年频道慢节奏朗读字幕",
+        "min_duration": 1.5,
+        "max_duration": 7.0,
+        "ideal_min_duration": 1.9,
+        "ideal_max_duration": 4.8,
+        "max_chars_per_line": 37,
+        "max_chars_total": 84,
+        "max_chars_per_second": 17.0,
+        "gap_seconds": 0.08,
+        "min_complete_duration": 1.5
+      }
+    }
+  },
+  "dependency_versions": {
+    "jieba": "0.42.1",
+    "SudachiPy": "0.7.0",
+    "SudachiDict-core": "20260723.1",
+    "spacy": "3.8.16",
+    "en-core-web-sm": "3.8.0"
+  },
+  "source_hashes": {
+    "README.md": "51096620794fface659e7e7c6ee801610b8b66cfa99f6c3873377c956d49b578",
+    "app.py": "5e7ff366ab7a7859039b768478beb39a495d8ac385e2605e14d198015d84c3b6",
+    "pyproject.toml": "52dca877e16c0f7b499e2e6496befa624ee651a3d8d6095b6765df5d9f06df3e",
+    "requirements.txt": "6533be3d96a16d47bd89beca3dc5c43f204b48c6c4aa3a22f983ffe19cb48611",
+    "src/autosrt_aligner/cli.py": "bae89deb8f7e987aff03f60085e7a69f91217bbc73dd14e4a678a77dd1a4e531",
+    "src/autosrt_aligner/models.py": "b5a36a27b81a48ced98cee382399d681a955fd8e0331eba2f4ea20cb45a98653",
+    "src/autosrt_aligner/pipeline_v2.py": "e21e857c75341b2f5183892b3f00b0caac6db0c4ccc1f07cbc80e0a94b482628",
+    "src/autosrt_aligner/profiles.py": "9d30e706deabd17bc0f22cb4082cea8779c21013b9a0ca6a8a12f6ab073d9053",
+    "src/autosrt_aligner/quality_v2.py": "d2564f6411d67a2efa98441fec6bee47cbc4824d269284bc9515ebbb48becd06",
+    "src/autosrt_aligner/segmenter_v2.py": "2ef346d819f6821c906507f8421ad4a5dfa17a14e441c7559fd94ba89f6c087d",
+    "static/app.js": "d4d29f1d060560d8e3f1024e93b042a6160c797187ed4ded1d52b1b655ada97d",
+    "static/index.html": "163784dda4a62840d0cad0d47bc16d27ff93bb2e1eff1368f0b8b3bc3d901980",
+    "static/styles.css": "c0459fae643332d725ee09298bf94edb48ef95dec11e888d255ee49c8f7f2487",
+    "tests/test_static_quality_assets.py": "967a7947123e1550b181af9d4d54d4284a396730c588e8a1098b3bc0d19e2b26",
+    "tests/test_web_app.py": "1824352efa750e152623b55903c8e25fbfa2468c2cbe5e59279b92c1c058ce4e",
+    "src/autosrt_aligner/language_rules.py": "7fd1b5e798abfa249eb61b648301a3ce1e20a7657d177cd14a0c22b5e2243cef",
+    "src/autosrt_aligner/data/dict.txt.big": "b16011275c42955ccd81fc1adecc93a59dbb7926af69d93fc95d4943d40f6aad",
+    "src/autosrt_aligner/data/jieba-LICENSE": "18ba0984839f85853b29fadaf992f7dba8fd0ca0fbeae34de2b8735222dc7a37",
+    "src/autosrt_aligner/data/README.md": "5498746a80dd6d8b1d87545dc700b40e4552ca225d8bcf30f0c6da2f9ade4aa4",
+    "tests/test_natural_segmentation.py": "e4971d6cae4f916bce68e2d2eb16bda361769e38c56175bc9204bac601f3790b"
+  },
+  "original_history_checks": [
+    {
+      "id": "ko-71a4c5f06988",
+      "exists": true,
+      "unchanged": true
+    },
+    {
+      "id": "ja-8e2e91ec834a",
+      "exists": true,
+      "unchanged": true
+    },
+    {
+      "id": "ja-348732b875d5",
+      "exists": true,
+      "unchanged": true
+    },
+    {
+      "id": "ja-9164c6a57e6b",
+      "exists": true,
+      "unchanged": true
+    },
+    {
+      "id": "ja-c9e74c50fc49",
+      "exists": true,
+      "unchanged": true
+    },
+    {
+      "id": "ko-300d685a627b",
+      "exists": true,
+      "unchanged": true
+    },
+    {
+      "id": "en-96ebf8e24761",
+      "exists": true,
+      "unchanged": true
+    },
+    {
+      "id": "zh-cdc5dcefa7dd",
+      "exists": true,
+      "unchanged": true
+    },
+    {
+      "id": "en-da47bc4a61d2",
+      "exists": true,
+      "unchanged": true
+    },
+    {
+      "id": "zh-e5eaccca6784",
+      "exists": true,
+      "unchanged": true
+    },
+    {
+      "id": "en-711bb43eb2b0",
+      "exists": true,
+      "unchanged": true
+    },
+    {
+      "id": "zh-d96b9d470368",
+      "exists": true,
+      "unchanged": true
+    },
+    {
+      "id": "zh-e7ad46a88cfb",
+      "exists": true,
+      "unchanged": true
+    },
+    {
+      "id": "zh-39f792e92b4c",
+      "exists": true,
+      "unchanged": true
+    },
+    {
+      "id": "en-c9b85a6b4091",
+      "exists": true,
+      "unchanged": true
+    },
+    {
+      "id": "zh-f4b29983c5a5",
+      "exists": true,
+      "unchanged": true
+    },
+    {
+      "id": "zh-39fe4cad143c",
+      "exists": true,
+      "unchanged": true
+    },
+    {
+      "id": "zh-ce8d14301875",
+      "exists": true,
+      "unchanged": true
+    },
+    {
+      "id": "zh-d7a26d53acc2",
+      "exists": true,
+      "unchanged": true
+    },
+    {
+      "id": "en-4b8ef45c3595",
+      "exists": true,
+      "unchanged": true
+    },
+    {
+      "id": "ko-c8e7092d74ae",
+      "exists": true,
+      "unchanged": true
+    }
+  ],
+  "validation_directory": "/private/tmp/subtitle-naturalness-lab-20261003/project-final",
+  "backup": "/private/tmp/subtitle-naturalness-lab-20261003/project-before-implementation.tar",
+  "scope_limits": [
+    "Frozen historical timestamps; no fresh alignment model run",
+    "Text review improvement is separate from constraint checks for the four styles"
+  ],
+  "ui_screenshot": "reports/subtitle-settings-20261003.jpg",
+  "ui_screenshot_sha256": "76aaf823b75e9affb682562eb287ac6b80f99b392682b71a5e1c05ee4693ef31"
+}

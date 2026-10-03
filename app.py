@@ -73,17 +73,28 @@ def index_head() -> FileResponse:
 
 @app.get("/api/options")
 def api_options() -> dict[str, Any]:
-    language_defaults = {
+    profile_defaults = {
         language: {
-            "min_duration": profile.min_duration,
-            "max_duration": profile.max_duration,
-            "max_chars_per_line": profile.max_chars_per_line,
+            key: {
+                "min_duration": profile.min_duration,
+                "max_duration": profile.max_duration,
+                "max_chars_per_line": profile.max_chars_per_line,
+                "max_chars_total": profile.max_chars_total,
+                "max_chars_per_second": profile.max_chars_per_second,
+                "min_complete_duration": profile.min_complete_duration,
+            }
+            for key in PROFILE_LABELS
+            for profile in [resolve_profile(key, language)]
         }
         for language in LANGUAGES
-        if language in SUPPORTED_LANGUAGES
-        for profile in [resolve_profile("youtube_long", language)]
     }
-    language_defaults["en"]["max_duration"] = 6.0
+    language_defaults = {
+        language: {
+            field: presets["youtube_long"][field]
+            for field in ("min_duration", "max_duration", "max_chars_per_line")
+        }
+        for language, presets in profile_defaults.items()
+    }
     return {
         "languages": [value for value in LANGUAGES if value in SUPPORTED_LANGUAGES],
         "profiles": [
@@ -91,12 +102,11 @@ def api_options() -> dict[str, Any]:
             for key, label in PROFILE_LABELS.items()
         ],
         "language_defaults": language_defaults,
+        "profile_defaults": profile_defaults,
         "alignment_engine": alignment_engine_status(),
         "defaults": {
             "subtitle_profile": "youtube_long",
-            "min_duration": 1.2,
-            "max_duration": 6.5,
-            "max_chars_per_line": 18,
+            **profile_defaults["zh"]["youtube_long"],
             "generate_vtt": True,
         },
     }
@@ -109,26 +119,31 @@ def create_job(
     script_text: str = Form(default=""),
     language: str = Form(default=""),
     subtitle_profile: str = Form(default="youtube_long"),
-    min_duration: float = Form(default=1.2),
-    max_duration: float = Form(default=6.5),
-    max_chars_per_line: int = Form(default=18),
+    min_duration: float | None = Form(default=None),
+    max_duration: float | None = Form(default=None),
+    max_chars_per_line: int | None = Form(default=None),
     generate_vtt: bool = Form(default=True),
+    max_chars_total: int | None = Form(default=None),
 ) -> dict[str, str]:
     if audio_file is None or not audio_file.filename:
         raise HTTPException(status_code=400, detail="请先上传音频文件")
     if subtitle_profile not in PROFILE_LABELS:
         raise HTTPException(status_code=400, detail=f"不支持的字幕风格: {subtitle_profile}")
-    if min_duration <= 0:
-        raise HTTPException(status_code=400, detail="每条字幕最短时长必须大于 0")
-    if max_duration <= min_duration:
-        raise HTTPException(status_code=400, detail="每条字幕最长时长必须大于最短时长")
-    if max_chars_per_line <= 0:
-        raise HTTPException(status_code=400, detail="字幕切分参考字符数必须大于 0")
-
     text = _read_script_text(script_file, script_text)
     if language not in SUPPORTED_LANGUAGES:
         raise HTTPException(status_code=400, detail=f"不支持的语言参数: {language}")
     language = normalize_language(language)
+    try:
+        profile = resolve_profile(
+            subtitle_profile,
+            language,
+            min_duration=min_duration,
+            max_duration=max_duration,
+            max_chars_per_line=max_chars_per_line,
+            max_chars_total=max_chars_total,
+        )
+    except InputError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     job_id = str(uuid.uuid4())
     output_dir = Path(tempfile.mkdtemp(prefix=f"autosrt_web_{job_id}_"))
     upload_dir = output_dir / "uploads"
@@ -161,9 +176,10 @@ def create_job(
             "language": language,
             "subtitle_profile": subtitle_profile,
             "output_dir": output_dir,
-            "min_duration": min_duration,
-            "max_duration": max_duration,
-            "max_chars_per_line": max_chars_per_line,
+            "min_duration": profile.min_duration,
+            "max_duration": profile.max_duration,
+            "max_chars_per_line": profile.max_chars_per_line,
+            "max_chars_total": profile.max_chars_total,
             "generate_vtt": generate_vtt,
         },
         daemon=True,
@@ -200,6 +216,7 @@ def _run_job(
     max_duration: float,
     max_chars_per_line: int,
     generate_vtt: bool,
+    max_chars_total: int,
 ) -> None:
     _update_job(job_id, status="running", stage="aligning", logs=["开始语音识别与字幕对齐"])
     try:
@@ -212,6 +229,7 @@ def _run_job(
             min_duration=min_duration,
             max_duration=max_duration,
             max_chars_per_line=max_chars_per_line,
+            max_chars_total=max_chars_total,
             generate_vtt=generate_vtt,
         )
         files = {

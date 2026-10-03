@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class StaticQualityAssetTests(unittest.TestCase):
     def test_index_loads_versioned_v2_quality_script_and_uses_evidence_label(self):
         index = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
-        self.assertIn("/static/app.js?v=20260801-qwen-mlx-quality", index)
+        self.assertIn("/static/app.js?v=20261003-natural-subtitles", index)
         self.assertIn("原文证据覆盖率", index)
         self.assertNotIn("语音覆盖率", index)
 

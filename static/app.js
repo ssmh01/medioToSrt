@@ -3,7 +3,7 @@ const state = {
     pollTimer: null,
     startedAt: null,
     logs: [],
-    languageDefaults: {},
+    profileDefaults: {},
 };
 
 const nodes = {
@@ -17,6 +17,9 @@ const nodes = {
     minDuration: document.getElementById("minDuration"),
     maxDuration: document.getElementById("maxDuration"),
     maxChars: document.getElementById("maxChars"),
+    presetStatus: document.getElementById("presetStatus"),
+    presetHint: document.getElementById("presetHint"),
+    resetDefaults: document.getElementById("resetDefaults"),
     generateVtt: document.getElementById("generateVtt"),
     submitButton: document.getElementById("submitButton"),
     statusText: document.getElementById("statusText"),
@@ -46,7 +49,12 @@ async function init() {
 
 function bindEvents() {
     nodes.form.addEventListener("submit", submitJob);
-    nodes.languageSelect.addEventListener("change", applyLanguageDefaults);
+    nodes.languageSelect.addEventListener("change", applyProfileDefaults);
+    nodes.profileSelect.addEventListener("change", applyProfileDefaults);
+    nodes.resetDefaults.addEventListener("click", applyProfileDefaults);
+    [nodes.minDuration, nodes.maxDuration, nodes.maxChars].forEach((input) => {
+        input.addEventListener("input", updatePresetStatus);
+    });
     nodes.scriptText.addEventListener("input", () => {
         nodes.textCount.textContent = String(nodes.scriptText.value.trim().length);
     });
@@ -73,7 +81,7 @@ async function loadOptions() {
     const response = await fetch("/api/options");
     const data = await response.json();
     const languages = data.languages.filter((value) => value !== "auto");
-    state.languageDefaults = data.language_defaults || {};
+    state.profileDefaults = data.profile_defaults || {};
     nodes.languageSelect.innerHTML = '<option value="" selected disabled>请选择语言</option>' + languages
         .map((value) => `<option value="${escapeAttr(value)}">${languageLabel(value)}</option>`)
         .join("");
@@ -84,18 +92,43 @@ async function loadOptions() {
     nodes.profileSelect.value = data.defaults.subtitle_profile;
     nodes.minDuration.value = data.defaults.min_duration;
     nodes.maxDuration.value = data.defaults.max_duration;
-    nodes.maxChars.value = data.defaults.max_chars_per_line;
+    nodes.maxChars.value = data.defaults.max_chars_total;
     nodes.generateVtt.checked = data.defaults.generate_vtt;
+    updatePresetStatus();
 }
 
-function applyLanguageDefaults() {
-    const defaults = state.languageDefaults[nodes.languageSelect.value];
+function selectedDefaults() {
+    return state.profileDefaults[nodes.languageSelect.value]?.[nodes.profileSelect.value];
+}
+
+function applyProfileDefaults() {
+    const defaults = selectedDefaults();
     if (!defaults) {
+        updatePresetStatus();
         return;
     }
     nodes.minDuration.value = defaults.min_duration;
     nodes.maxDuration.value = defaults.max_duration;
-    nodes.maxChars.value = defaults.max_chars_per_line;
+    nodes.maxChars.value = defaults.max_chars_total;
+    updatePresetStatus();
+}
+
+function updatePresetStatus() {
+    const defaults = selectedDefaults();
+    nodes.resetDefaults.disabled = !defaults;
+    if (!defaults) {
+        nodes.presetStatus.textContent = "请选择语言以加载默认设置";
+        nodes.presetHint.textContent = "切换语言或字幕风格会加载对应默认设置。";
+        return;
+    }
+    const custom = Number(nodes.minDuration.value) !== defaults.min_duration
+        || Number(nodes.maxDuration.value) !== defaults.max_duration
+        || Number(nodes.maxChars.value) !== defaults.max_chars_total;
+    nodes.presetStatus.textContent = custom ? "自定义设置" : "当前风格默认设置";
+    const completeMin = Number(nodes.minDuration.value) > defaults.min_duration
+        ? Number(nodes.minDuration.value)
+        : Math.min(Number(nodes.minDuration.value), defaults.min_complete_duration);
+    nodes.presetHint.textContent = `完整短句最短 ${completeMin} 秒；阅读速度上限 ${Number(defaults.max_chars_per_second.toFixed(2))} 字符/秒。切换语言或风格会重置这三项设置。`;
 }
 
 function setupUploadCard(inputId, cardId, emptyId, chosenId, nameId, metaId) {
@@ -153,6 +186,7 @@ function setupSteppers() {
             const min = Number(input.min || 0);
             const decimals = Math.abs(step) < 1 ? 1 : 0;
             input.value = String(Math.max(min, next).toFixed(decimals));
+            input.dispatchEvent(new Event("input", { bubbles: true }));
         });
     });
 }
@@ -193,7 +227,7 @@ async function submitJob(event) {
     formData.append("subtitle_profile", nodes.profileSelect.value);
     formData.append("min_duration", nodes.minDuration.value);
     formData.append("max_duration", nodes.maxDuration.value);
-    formData.append("max_chars_per_line", nodes.maxChars.value);
+    formData.append("max_chars_total", nodes.maxChars.value);
     formData.append("generate_vtt", nodes.generateVtt.checked ? "true" : "false");
 
     try {

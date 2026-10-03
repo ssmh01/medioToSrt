@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>AI 语音原文案对齐 SRT 工具</title>
-    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="/static/styles.css?v=20261003-natural-subtitles">
 </head>
 <body>
     <div class="app-shell">
@@ -95,11 +95,16 @@
                     <details class="advanced" open>
                         <summary>高级设置</summary>
                         <div class="advanced-body">
+                            <div class="preset-controls">
+                                <span id="presetStatus" aria-live="polite"></span>
+                                <button id="resetDefaults" class="mini-button" type="button">恢复当前风格默认</button>
+                            </div>
+                            <p id="presetHint" class="settings-note"></p>
                             <label class="step-field">
-                                <span>最小字幕时长（秒）</span>
+                                <span>最短字幕时长（秒）</span>
                                 <div class="stepper">
                                     <button type="button" data-step="-0.1" data-target="minDuration">−</button>
-                                    <input id="minDuration" name="min_duration" type="number" min="0.1" step="0.1">
+                                    <input id="minDuration" name="min_duration" type="number" min="0.1" step="0.1" required>
                                     <button type="button" data-step="0.1" data-target="minDuration">＋</button>
                                 </div>
                             </label>
@@ -107,15 +112,15 @@
                                 <span>最大字幕时长（秒）</span>
                                 <div class="stepper">
                                     <button type="button" data-step="-0.1" data-target="maxDuration">−</button>
-                                    <input id="maxDuration" name="max_duration" type="number" min="0.2" step="0.1">
+                                    <input id="maxDuration" name="max_duration" type="number" min="0.2" step="0.1" required>
                                     <button type="button" data-step="0.1" data-target="maxDuration">＋</button>
                                 </div>
                             </label>
                             <label class="step-field">
-                                <span>每行最大字符数</span>
+                                <span>每条字幕最大字符数</span>
                                 <div class="stepper">
                                     <button type="button" data-step="-1" data-target="maxChars">−</button>
-                                    <input id="maxChars" name="max_chars_per_line" type="number" min="1" step="1">
+                                    <input id="maxChars" name="max_chars_total" type="number" min="1" step="1" required>
                                     <button type="button" data-step="1" data-target="maxChars">＋</button>
                                 </div>
                             </label>
@@ -235,6 +240,6 @@
         </main>
     </div>
 
-    <script src="/static/app.js?v=20260801-qwen-mlx-quality"></script>
+    <script src="/static/app.js?v=20261003-natural-subtitles"></script>
 </body>
 </html>

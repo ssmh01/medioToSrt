@@ -15,7 +15,7 @@
 
 - Python 3.10+，推荐使用 Codex 自带 Python 3.12。
 - 推荐系统安装 `ffmpeg` 和 `ffprobe`；如果没有系统 ffmpeg，项目会使用 `imageio-ffmpeg` 提供的本地 ffmpeg fallback。
-- 依赖：FastAPI、uvicorn、python-multipart、imageio-ffmpeg、mlx-audio。
+- 依赖：FastAPI、uvicorn、python-multipart、imageio-ffmpeg、mlx-audio，以及字幕分词使用的 jieba、Sudachi、spaCy 和英语模型。
 - 必须在能访问 Apple GPU/Metal 的 Apple Silicon 桌面进程中运行 Qwen3-ForcedAligner。
 
 macOS 如果已有 Homebrew，也可以安装系统 ffmpeg：
@@ -36,6 +36,9 @@ pip install -r requirements.txt
 在 Apple Silicon 上，`pip install -r requirements.txt` 会安装 MLX 适配器；首次运行时
 会从 Hugging Face 下载 `mlx-community/Qwen3-ForcedAligner-0.6B-8bit`。
 本工具固定使用 Qwen MLX。若当前进程无法访问 Metal，任务会明确失败，不会切换到其他对齐引擎。
+
+字幕分词依赖与历史回放实验固定为相同版本，随 `requirements.txt` 安装。
+中文简繁大词典随项目打包；日语词典和英语模型在安装依赖时下载。
 
 ## 启动网页
 
@@ -87,11 +90,32 @@ PYTHONPATH=src python -m autosrt_aligner.cli \
 
 ## 测试
 
-单元测试不下载模型，也不依赖 ffmpeg：
+安装依赖后，单元测试不额外下载对齐模型，也不依赖 ffmpeg：
 
 ```bash
 PYTHONPATH=src python -m unittest discover -s tests
 ```
 
+2026-10-03 的集成验证：115 项测试通过，21 份历史数据的 84 组风格分割与导出约束检查通过，16 种语言与风格组合的界面同步通过。长视频的 21 份 SRT/VTT 与已复核实验结果完全一致。验证使用历史时间证据，未重新请求对齐模型或逐条试听；详细范围和参数见 [验证记录](reports/subtitle-integration-validation-20261003.json)。
+
 真实 Qwen MLX 对齐需要可访问 Metal 的 Apple Silicon 进程、模型和 ffmpeg，并准备实际音频文件。
 若报告显示“待复核”，应先检查报告中的低置信区间和时间证据，再决定是否重新生成；程序不会自动把不确定时间轴标记为通过。
+
+## 字幕切分和风格设置
+
+中文使用简繁词典保护词语，日语保护复合词、助词和动词组合，英语使用词语及短语关系，韩语使用词间空格和标点边界。切点从已有 token 中选择，时间由对应 token 的起止值计算。
+
+语言与字幕风格共同决定默认设置。切换任意一项都会重置时长和字数；手动修改后显示“自定义设置”，可点击“恢复当前风格默认”。
+
+| 风格 | 最短时长 | 最长时长 | 单条字符上限：中／日／韩／英 |
+| --- | --- | --- | --- |
+| YouTube 长视频 | 1.2 秒 | 中日韩 6.5 秒、英语 6 秒 | 34／34／38／84 |
+| 标准字幕 | 1.2 秒 | 6 秒 | 34／34／38／84 |
+| 短字幕 | 1 秒 | 4.2 秒 | 26／26／29／65 |
+| 老年频道 | 1.5 秒 | 7 秒 | 29／29／32／84 |
+
+长视频的软目标时长为中文、日语 3 秒，韩语 3.1 秒，英语 3.3 秒。完整语意、阅读速度和硬约束共同决定实际长度。
+YouTube 风格中，两端都为完整句子或独立话语边界的短句可低至 0.8 秒；句内片段至少 1.2 秒。手动提高最短时长时，完整短句也遵守提高后的值。最后一条保留音频结尾的既有时长规则。
+老年频道的阅读速度上限降低 15%；英语保留 84 字的硬上限，以便在原有时间证据下选择符合慢速阅读的完整片段。切点选择会提前检查最后一条延伸至音频末尾后的时长。
+
+“每条字幕最大字符数”直接约束整条字幕，空白不计入字符数。API 和 CLI 使用 `max_chars_total` / `--max-chars-total`；`max_chars_per_line` 继续作为旧客户端的兼容参数。

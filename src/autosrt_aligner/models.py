@@ -19,6 +19,7 @@ class SubtitleProfile:
     max_chars_total: int
     max_chars_per_second: float
     gap_seconds: float = 0.08
+    min_complete_duration: float | None = None
 
 
 @dataclass

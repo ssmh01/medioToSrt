@@ -27,6 +27,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--min-duration", type=float, default=None)
     parser.add_argument("--max-duration", type=float, default=None)
     parser.add_argument("--max-chars-per-line", type=int, default=None)
+    parser.add_argument("--max-chars-total", type=int, default=None, help="每条字幕最大字符数")
     parser.add_argument(
         "--engine",
         default="qwen-mlx",
@@ -46,6 +47,7 @@ def main(argv: list[str] | None = None) -> int:
             min_duration=args.min_duration,
             max_duration=args.max_duration,
             max_chars_per_line=args.max_chars_per_line,
+            max_chars_total=args.max_chars_total,
             generate_vtt=args.vtt,
             alignment_engine=args.engine,
         )

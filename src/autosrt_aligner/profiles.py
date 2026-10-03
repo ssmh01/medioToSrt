@@ -42,6 +42,7 @@ def resolve_profile(
     min_duration: float | None = None,
     max_duration: float | None = None,
     max_chars_per_line: int | None = None,
+    max_chars_total: int | None = None,
 ) -> SubtitleProfile:
     if profile_key not in PROFILE_LABELS:
         raise InputError(f"不支持的字幕风格: {profile_key}")
@@ -71,12 +72,13 @@ def resolve_profile(
     elif profile_key == "slow_elder":
         default_min, default_max = 1.5, 7.0
         base_line = max(10, int(base_line * 0.9))
-        base_total = max(base_line, int(base_total * 0.86))
+        if group != "en":
+            base_total = max(base_line, int(base_total * 0.86))
         cps *= 0.85
     elif profile_key == "standard":
         default_min, default_max = 1.2, 6.0
     else:
-        default_min, default_max = 1.2, 6.5
+        default_min, default_max = 1.2, 6.0 if group == "en" else 6.5
 
     effective_min = min_duration if min_duration is not None else default_min
     effective_max = max_duration if max_duration is not None else default_max
@@ -85,9 +87,18 @@ def resolve_profile(
     if effective_max <= effective_min:
         raise InputError("每条字幕最长时长必须大于最短时长")
 
-    effective_line = max_chars_per_line or base_line
+    effective_line = max_chars_per_line if max_chars_per_line is not None else base_line
     if effective_line <= 0:
         raise InputError("字幕切分参考字符数必须大于 0")
+
+    effective_total = (
+        max_chars_total if max_chars_total is not None else max(effective_line, base_total)
+    )
+    if effective_total <= 0:
+        raise InputError("每条字幕最大字符数必须大于 0")
+    complete_min = 0.8 if profile_key == "youtube_long" else default_min
+    if effective_min > default_min:
+        complete_min = effective_min
 
     return SubtitleProfile(
         key=profile_key,
@@ -97,6 +108,7 @@ def resolve_profile(
         ideal_min_duration=max(1.0, effective_min + 0.4),
         ideal_max_duration=min(effective_max, max(effective_min + 0.8, 4.8)),
         max_chars_per_line=effective_line,
-        max_chars_total=max(effective_line, base_total),
+        max_chars_total=effective_total,
         max_chars_per_second=cps,
+        min_complete_duration=min(effective_min, complete_min),
     )

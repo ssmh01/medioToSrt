@@ -15,7 +15,12 @@ from .models import (
     SubtitleProfile,
 )
 from .reconcile import ReconcileReport
-from .segmenter_v2 import _exceeds_reading_speed_limit, _is_safe_boundary
+from .segmenter_v2 import (
+    _exceeds_reading_speed_limit,
+    _is_safe_boundary,
+    minimum_cue_duration,
+    utterance_ends,
+)
 from .text import (
     is_nonspoken_alignment_char,
     normalize_for_compare,
@@ -49,6 +54,7 @@ def build_v2_quality_report(
     timing_status = "pass" if not timing_issues else "review"
     segmentation_issues = _segmentation_issues(source, cues, profile)
     segmentation_status = "pass" if not segmentation_issues else "review"
+    complete_ends = utterance_ends(source.display_text, source.language)
 
     publishable = (
         text_status == "pass"
@@ -112,7 +118,9 @@ def build_v2_quality_report(
         "too_short_count": sum(
             1
             for cue in cues[:-1]
-            if cue.duration < profile.min_duration - 0.001
+            if cue.duration < minimum_cue_duration(
+                cue.start_char, cue.end_char, profile, complete_ends,
+            ) - 0.001
         ),
         "too_long_count": sum(1 for cue in cues if cue.duration > profile.max_duration + 0.001),
         "max_chars_total": profile.max_chars_total,
@@ -233,10 +241,16 @@ def _segmentation_issues(
     issues: list[str] = []
     if not cues:
         return ["没有字幕 cue"]
+    complete_ends = utterance_ends(source.display_text, source.language)
     for index, cue in enumerate(cues):
         if cue.duration <= 0:
             issues.append("存在非正时长 cue")
-        if index < len(cues) - 1 and cue.duration < profile.min_duration - 0.001:
+        if (
+            index < len(cues) - 1
+            and cue.duration < minimum_cue_duration(
+                cue.start_char, cue.end_char, profile, complete_ends,
+            ) - 0.001
+        ):
             issues.append("存在短于配置下限的 cue")
         if cue.duration > profile.max_duration + 0.001:
             issues.append("存在超过配置上限的 cue")
