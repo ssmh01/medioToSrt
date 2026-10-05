@@ -83,6 +83,12 @@ def resolve_profile(
         if group == "ja":
             default_max = 5.0
             base_total = 26
+        elif group == "ko":
+            default_max = 5.0
+            base_total = 28
+        elif group == "cjk":
+            default_max = 5.0
+            base_total = 20
 
     if group == "en":
         default_max = 5.0

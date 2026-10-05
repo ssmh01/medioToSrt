@@ -105,10 +105,10 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(
             payload["language_defaults"],
             {
-                "zh": {"min_duration": 1.2, "max_duration": 6.5, "max_chars_per_line": 18},
+                "zh": {"min_duration": 1.2, "max_duration": 5.0, "max_chars_per_line": 18},
                 "ja": {"min_duration": 1.2, "max_duration": 5.0, "max_chars_per_line": 17},
                 "en": {"min_duration": 1.2, "max_duration": 5.0, "max_chars_per_line": 42},
-                "ko": {"min_duration": 1.2, "max_duration": 6.5, "max_chars_per_line": 20},
+                "ko": {"min_duration": 1.2, "max_duration": 5.0, "max_chars_per_line": 20},
             },
         )
 
@@ -131,8 +131,8 @@ class WebAppTests(unittest.TestCase):
     def test_options_include_all_language_style_combinations(self):
         presets = self.client.get("/api/options").json()["profile_defaults"]
         expected_caps = {
-            "zh": (34, 34, 26, 29), "ja": (26, 34, 26, 29),
-            "ko": (38, 38, 29, 32), "en": (60, 60, 60, 60),
+            "zh": (20, 34, 26, 29), "ja": (26, 34, 26, 29),
+            "ko": (28, 38, 29, 32), "en": (60, 60, 60, 60),
         }
         for language, caps in expected_caps.items():
             for style, cap in zip(("youtube_long", "standard", "short", "slow_elder"), caps):
@@ -144,6 +144,9 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(presets["ja"]["youtube_long"]["min_duration"], 1.2)
         self.assertEqual(presets["ja"]["youtube_long"]["max_duration"], 5.0)
         self.assertEqual(presets["ja"]["short"]["max_duration"], 4.2)
+        self.assertEqual(presets["ko"]["youtube_long"]["min_duration"], 1.2)
+        self.assertEqual(presets["ko"]["youtube_long"]["max_duration"], 5.0)
+        self.assertEqual(presets["ko"]["youtube_long"]["max_chars_per_second"], 10.5)
         self.assertEqual(presets["ko"]["slow_elder"]["min_duration"], 1.5)
 
     def test_create_job_resolves_omitted_settings_and_keeps_custom_character_cap(self):
